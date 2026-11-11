@@ -69,7 +69,6 @@ Não existe "noite" nem virada de dia: o sistema funciona a qualquer hora. Cada 
    Na busca, digite `5`, `mesa 5` ou `m5` para achar quem está na mesa 5 (a mesa 15 não aparece junto).
 2. No cartão do cliente, **+ Consumo** → produto (ex.: `cerveja skol`) e quantidade.
    - **Adicionar e continuar** lança outro produto sem fechar a janela.
-   - Os produtos mais pedidos aparecem como atalhos.
 3. **+** ao lado do item registra mais um pedido agora. **−** corrige o pedido mais recente.
 4. Quando o cliente pagar e for embora, clique em **Encerrar**. A conta vai para a aba **Concluídos**. Se foi engano, use **Reabrir**.
 5. **Excluir** só fica ativo para clientes que ainda não consumiram nada.
@@ -106,7 +105,7 @@ assets/
     metrics.css         painel de métricas
     animations.css      animações
   js/
-    theme.js            alternância de tema
+    theme.js            tema (sempre abre no claro; o botão troca só durante o uso)
     utils.js            formatação e validação (CPF, horários…)
     icons.js            ícones SVG
     storage.js          dados e horário dos pedidos (cópia no navegador)

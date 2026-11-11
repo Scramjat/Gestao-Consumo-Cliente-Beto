@@ -1,19 +1,15 @@
 /* =========================================================
    Tema claro / escuro
    Roda no <head> para aplicar o tema antes de desenhar a página.
+   Sempre abre no modo claro; o botão troca o tema só enquanto
+   o sistema estiver aberto.
    ========================================================= */
 
 const Theme = (() => {
-  const KEY = 'comanda:tema';
   const root = document.documentElement;
 
-  function preferred() {
-    try {
-      const saved = localStorage.getItem(KEY);
-      if (saved === 'light' || saved === 'dark') return saved;
-    } catch { /* armazenamento indisponível */ }
-    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
+  // Escolha antiga salva no aparelho (não é mais usada): apaga
+  try { localStorage.removeItem('comanda:tema'); } catch { /* ignora */ }
 
   function apply(theme) {
     root.dataset.theme = theme;
@@ -23,7 +19,6 @@ const Theme = (() => {
   /** Alterna o tema. `origin` ({x, y}) é o ponto de onde a animação circular começa. */
   function toggle(origin) {
     const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
-    try { localStorage.setItem(KEY, next); } catch { /* ignora */ }
 
     const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!document.startViewTransition || reduceMotion) {
@@ -38,7 +33,7 @@ const Theme = (() => {
     return next;
   }
 
-  apply(preferred());
+  apply('light');
 
   return { toggle, current: () => root.dataset.theme };
 })();

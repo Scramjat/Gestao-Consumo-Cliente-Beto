@@ -6,7 +6,8 @@
 
 const Store = (() => {
   const KEY = 'comanda:estado:v1';
-  const PRODUCTS_KEY = 'comanda:produtos:v1';
+  // Lista antiga de "produtos mais pedidos" (não é mais usada): apaga do aparelho
+  try { localStorage.removeItem('comanda:produtos:v1'); } catch { /* ignora */ }
 
   const listeners = new Set();
 
@@ -51,12 +52,7 @@ const Store = (() => {
     }
   }
 
-  function loadProducts() {
-    try { return JSON.parse(localStorage.getItem(PRODUCTS_KEY)) || {}; } catch { return {}; }
-  }
-
   let state = load();
-  let products = loadProducts();
 
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.warn('Falha ao salvar localmente', e); }
@@ -76,12 +72,6 @@ const Store = (() => {
   const clean = (text) => String(text).trim().replace(/\s+/g, ' ');
   const findClient = (id) => state.clients.find((c) => c.id === id);
   const recount = (item) => { item.qty = item.orders.reduce((sum, o) => sum + o.qty, 0); };
-
-  function countProduct(name) {
-    const key = name.toLowerCase();
-    products[key] = { name, count: (products[key]?.count || 0) + 1 };
-    try { localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products)); } catch { /* ignora */ }
-  }
 
   return {
     isValidState,
@@ -166,7 +156,6 @@ const Store = (() => {
         c.items.push(item);
       }
       recount(item);
-      countProduct(item.product);
       commit({ type: 'item:add', clientId, itemId: item.id, isNew });
       return item;
     },
@@ -211,17 +200,6 @@ const Store = (() => {
       commit({ type: 'item:add', clientId, itemId: item.id, isNew: true });
     },
 
-    topProducts(limit = 8) {
-      return Object.values(products)
-        .sort((a, b) => b.count - a.count)
-        .slice(0, limit)
-        .map((p) => p.name);
-    },
-
-    allProducts() {
-      return Object.values(products).map((p) => p.name).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    },
-
     /** Substitui tudo (dados vindos do Obsidian ou de outra aba). Não altera updatedAt. */
     replace(next) {
       if (!isValidState(next)) return;
@@ -232,7 +210,7 @@ const Store = (() => {
 
     /** Tudo o que precisa para restaurar o sistema em outro aparelho. */
     backup() {
-      return { app: 'comanda', version: 2, exportedAt: new Date().toISOString(), estado: state, produtos: products };
+      return { app: 'comanda', version: 2, exportedAt: new Date().toISOString(), estado: state };
     },
 
     /** Restaura um backup. Retorna false se o arquivo não for um backup válido. */
@@ -241,8 +219,6 @@ const Store = (() => {
       const next = migrate(JSON.parse(JSON.stringify(data.estado)));
       delete next.pristine;
       next.updatedAt = new Date().toISOString();
-      products = data.produtos && typeof data.produtos === 'object' ? data.produtos : {};
-      try { localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products)); } catch { /* ignora */ }
       state = next;
       commit({ type: 'restore' });
       return true;
@@ -251,7 +227,6 @@ const Store = (() => {
     /** Recarrega do localStorage quando outra aba altera os dados. */
     reloadFromStorage() {
       state = load();
-      products = loadProducts();
       emit({ type: 'replace' });
     },
 

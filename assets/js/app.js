@@ -51,8 +51,6 @@
     itemProduct: $('#itemProduct'),
     itemQty: $('#itemQty'),
     productError: $('#productError'),
-    productChips: $('#productChips'),
-    productSuggestions: $('#productSuggestions'),
     itemCurrent: $('#itemCurrent')
   };
 
@@ -254,16 +252,6 @@
   /* =====================================================
      Consumo
      ===================================================== */
-  function renderProductHelpers() {
-    const current = Utils.normalize(els.itemProduct.value);
-    els.productChips.innerHTML = Store.topProducts(8).map((p) => {
-      const selected = Utils.normalize(p) === current ? ' is-selected' : '';
-      return `<button type="button" class="chip${selected}" data-product="${Utils.escapeHTML(p)}">${Utils.escapeHTML(p)}</button>`;
-    }).join('');
-    els.productSuggestions.innerHTML = Store.allProducts()
-      .map((p) => `<option value="${Utils.escapeHTML(p)}"></option>`).join('');
-  }
-
   function renderCurrentItems() {
     const client = Store.getClient(itemClientId);
     if (!client || !client.items.length) {
@@ -285,7 +273,6 @@
     els.itemProduct.value = '';
     els.itemQty.value = 1;
     setFieldError(els.itemProduct, els.productError, '');
-    renderProductHelpers();
     renderCurrentItems();
     UI.Modal.open(els.itemDialog);
     els.itemProduct.focus();
@@ -319,7 +306,6 @@
     if (keepOpen) {
       els.itemProduct.value = '';
       els.itemQty.value = 1;
-      renderProductHelpers();
       renderCurrentItems();
       els.itemProduct.focus();
     } else {
@@ -673,18 +659,6 @@
     els.itemQty.addEventListener('blur', () => { els.itemQty.value = readQty(); });
     els.itemProduct.addEventListener('input', () => {
       if (els.productError.textContent) setFieldError(els.itemProduct, els.productError, '');
-      const current = Utils.normalize(els.itemProduct.value);
-      els.productChips.querySelectorAll('.chip').forEach((chip) =>
-        chip.classList.toggle('is-selected', Utils.normalize(chip.dataset.product) === current));
-    });
-    els.productChips.addEventListener('click', (e) => {
-      const chip = e.target.closest('.chip');
-      if (!chip) return;
-      // Clicar de novo no mesmo produto soma +1 na quantidade
-      if (chip.classList.contains('is-selected')) stepQty(1);
-      els.itemProduct.value = chip.dataset.product;
-      els.itemProduct.dispatchEvent(new Event('input'));
-      setFieldError(els.itemProduct, els.productError, '');
     });
 
     // Busca e filtro

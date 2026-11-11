@@ -771,23 +771,6 @@ button.stat:hover .stat__hint::after { transform: translateX(3px); }
 .stepper input::-webkit-outer-spin-button,
 .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* Chips de produtos frequentes */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -6px; }
-.chips:empty { display: none; }
-.chip {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 500;
-  transition: all .15s;
-}
-.chip:hover { border-color: var(--primary); color: var(--primary-text); background: var(--primary-soft); }
-.chip:active { transform: scale(.94); }
-.chip.is-selected { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
-
 /* Resumo do que o cliente já pediu (no modal) */
 .already {
   padding: 12px 14px;
