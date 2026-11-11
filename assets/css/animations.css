@@ -1,0 +1,89 @@
+/* =========================================================
+   Animações e transições
+   ========================================================= */
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes card-out {
+  to { opacity: 0; transform: scale(.9); }
+}
+@keyframes item-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+@keyframes flash {
+  from { background: var(--primary-soft); }
+  to   { background: transparent; }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes modal-out {
+  to { opacity: 0; transform: translateY(10px) scale(.97); }
+}
+@keyframes fade-in  { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(16px) scale(.95); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(8px) scale(.95); }
+}
+@keyframes shake {
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+@keyframes blink { to { opacity: .35; } }
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-100%); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes bump {
+  50% { transform: scale(1.12); }
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--vt-x, 100%) var(--vt-y, 0)); }
+  to   { clip-path: circle(150vmax at var(--vt-x, 100%) var(--vt-y, 0)); }
+}
+
+.client-card.is-new { animation: card-in .45s cubic-bezier(.2, .9, .3, 1.15) both; animation-delay: var(--delay, 0ms); }
+.client-card.is-leaving { animation: card-out .22s ease-in forwards; pointer-events: none; }
+.client-card.is-flash { animation: flash 1.2s ease-out; }
+
+.item.is-new { animation: item-in .3s ease-out both, flash 1.2s ease-out; }
+.item.is-pulse .item__qty { animation: pulse .35s ease-out; }
+
+.stat__value.is-bump { display: inline-block; animation: bump .3s ease-out; }
+
+.modal[open] .modal__card { animation: modal-in .28s cubic-bezier(.2, .9, .3, 1.15); }
+.modal[open]::backdrop { animation: fade-in .2s ease-out; }
+.modal.is-closing .modal__card { animation: modal-out .16s ease-in forwards; }
+.modal.is-closing::backdrop { animation: fade-out .16s ease-in forwards; }
+
+.field.has-error input,
+.is-shake { animation: shake .35s ease-in-out; }
+
+.toast { animation: toast-in .3s cubic-bezier(.2, .9, .3, 1.2); }
+.toast.is-leaving { animation: toast-out .22s ease-in forwards; }
+
+/* Troca de tema com "revelação" circular a partir do botão */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: theme-reveal .55s cubic-bezier(.4, 0, .2, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

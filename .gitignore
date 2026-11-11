@@ -1,0 +1,9 @@
+# Dados dos clientes (nomes, CPFs, consumo) - NUNCA enviar para o GitHub
+BD/
+
+# Log de erros do servidor local
+server/erros.log
+
+# Arquivos temporários
+*.tmp
+.claude/

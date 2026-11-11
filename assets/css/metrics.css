@@ -1,0 +1,307 @@
+/* =========================================================
+   Métricas: indicadores, gráficos e tabela
+   Uma série por gráfico, na cor da marca; textos sempre nas
+   cores de texto; grade discreta; barras finas com ponta arredondada.
+   ========================================================= */
+
+.modal--xl { width: min(1180px, calc(100vw - 32px)); }
+.modal--xl .modal__card { position: relative; max-height: calc(100vh - 32px); }
+.modal--xl .modal__body { padding-bottom: 24px; }
+
+.mx {
+  --mx-bar: var(--primary);
+  --mx-track: var(--surface-2);
+  --mx-grid: var(--border);
+  gap: 18px;
+}
+
+/* ---------- Filtro de período ---------- */
+.mx-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.mx-period__btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: background-color .15s, color .15s;
+}
+.mx-period__btn:hover { color: var(--text); }
+.mx-period__btn.is-active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+#metricsContent { display: flex; flex-direction: column; gap: 18px; }
+
+/* ---------- Indicadores (KPIs) ---------- */
+.mx-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.mx-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  animation: card-in .35s ease-out both;
+}
+.mx-kpi__label { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+.mx-kpi__value {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mx-kpi__hint { font-size: 12px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-kpi:first-child .mx-kpi__value { color: var(--primary); }
+
+/* ---------- Cartões de gráfico ---------- */
+.mx-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.mx-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  animation: card-in .4s ease-out both;
+}
+.mx-card--wide { grid-column: 1 / -1; }
+.mx-card__head h3 { font-size: 15.5px; font-weight: 700; }
+.mx-card__head p { margin-top: 2px; font-size: 12.5px; color: var(--text-muted); }
+
+/* ---------- Colunas verticais ---------- */
+.mx-columns {
+  position: relative;
+  height: 236px;
+  padding: 16px 0 0 30px;
+}
+.mx-grid {
+  position: absolute;
+  inset: 16px 0 24px 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.mx-grid__line {
+  position: relative;
+  border-top: 1px solid var(--mx-grid);
+}
+.mx-grid__line span {
+  position: absolute;
+  left: -30px;
+  width: 24px;
+  text-align: right;
+  top: -8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mx-columns__bars {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  height: 100%;
+}
+.mx-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  cursor: default;
+}
+.mx-col__plot {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background-color .15s;
+}
+.mx-col:hover .mx-col__plot { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.mx-col__bar {
+  width: min(24px, 70%);
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--mx-bar);
+  transform-origin: bottom;
+  animation: mx-grow .5s cubic-bezier(.2, .8, .3, 1) both;
+}
+.mx-col__bar.is-zero { background: var(--mx-grid); }
+.mx-col:hover .mx-col__bar:not(.is-zero) { filter: brightness(1.08); }
+.mx-col__value {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -4px);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mx-col__x {
+  height: 24px;
+  padding-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Barras horizontais ---------- */
+.mx-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mx-bar {
+  display: grid;
+  grid-template-columns: minmax(90px, 38%) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  transition: background-color .15s;
+}
+.mx-bar:hover { background: var(--surface-2); }
+.mx-bar__label {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mx-bar__label em { font-style: normal; font-weight: 500; font-size: 12px; color: var(--text-faint); }
+.mx-bar__track { height: 14px; display: flex; align-items: center; }
+.mx-bar__fill {
+  height: 14px;
+  min-width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--mx-bar);
+  transform-origin: left;
+  animation: mx-grow-x .5s cubic-bezier(.2, .8, .3, 1) both;
+}
+.mx-bar__value {
+  min-width: 28px;
+  text-align: right;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Contas abertas ---------- */
+.mx-open-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mx-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 13.5px;
+}
+.mx-open__name { flex: 1; min-width: 120px; font-weight: 650; }
+.mx-open__name em { font-style: normal; font-weight: 500; font-size: 12px; color: var(--text-faint); }
+.mx-open__when { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mx-open__items { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.mx-open.is-alert { box-shadow: inset 3px 0 0 var(--warning); }
+.mx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.mx-status .icon { width: 13px; height: 13px; color: var(--warning); }
+
+/* ---------- Tabela por cliente ---------- */
+.mx-table-wrap { overflow-x: auto; margin: 0 -6px; }
+.mx-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.mx-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.mx-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.mx-table tbody tr:hover td { background: var(--surface-2); }
+.mx-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- Dica flutuante ---------- */
+.mx-tooltip {
+  position: absolute;
+  z-index: 5;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}
+
+/* ---------- Vazio ---------- */
+.mx-empty { font-size: 13.5px; color: var(--text-faint); }
+.mx-empty--big {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 36px 16px;
+  text-align: center;
+  border-radius: 16px;
+  border: 1.5px dashed var(--border-strong);
+}
+.mx-empty--big strong { color: var(--text); font-size: 15px; }
+
+/* Atualização automática: sem animação de entrada */
+.mx-static .mx-kpi,
+.mx-static .mx-card,
+.mx-static .mx-col__bar,
+.mx-static .mx-bar__fill { animation: none; }
+
+@keyframes mx-grow { from { transform: scaleY(0); } }
+@keyframes mx-grow-x { from { transform: scaleX(0); } }
+
+/* ---------- Celular ---------- */
+@media (max-width: 760px) {
+  .mx-cards { grid-template-columns: 1fr; }
+  .mx-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mx-kpi__value { font-size: 20px; }
+  .mx-columns { height: 180px; }
+  .mx-col__x { font-size: 10px; }
+  .mx-period { align-self: stretch; }
+  .mx-period { flex-wrap: nowrap; }
+  .mx-period__btn { flex: 1 1 auto; padding: 0 6px; font-size: 12.5px; white-space: nowrap; }
+}
