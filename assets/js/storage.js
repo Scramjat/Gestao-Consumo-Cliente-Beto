@@ -1,5 +1,5 @@
 /* =========================================================
-   Dados: clientes, consumo e o horário de cada pedido
+   Dados: clientes, consumo, preços e pagamento
    Fica salvo no navegador (localStorage) e é espelhado
    no cofre do Obsidian pelo servidor (ver obsidian.js).
    ========================================================= */
@@ -18,7 +18,7 @@ const Store = (() => {
   function blank() {
     const now = new Date().toISOString();
     // pristine = lista recém-criada e nunca alterada; nunca deve sobrescrever o banco
-    return { version: 2, updatedAt: now, clients: [], pristine: true };
+    return { version: 3, updatedAt: now, products: [], clients: [], pristine: true };
   }
 
   function isValidState(s) {
@@ -33,7 +33,9 @@ const Store = (() => {
     delete s.nightId;
     delete s.seq;
     delete s.startedAt;
-    s.version = 2;
+    s.version = 3;
+    // Lista de produtos e preços (cadastrada pelo administrador)
+    if (!Array.isArray(s.products)) s.products = [];
     s.clients.forEach((c) => c.items.forEach((item) => {
       if (!Array.isArray(item.orders) || !item.orders.length) {
         item.orders = [{ qty: item.qty, at: item.addedAt || c.createdAt }];
@@ -123,11 +125,19 @@ const Store = (() => {
       commit({ type: 'client:restore', clientId: client.id });
     },
 
-    /** Encerra a conta (cliente pagou e foi embora). Só vale para quem consumiu. */
-    closeClient(id) {
+    /**
+     * Encerra a conta (cliente pagou e foi embora). Só vale para quem consumiu.
+     * Guarda uma cópia dos valores na hora do pagamento: mudar o preço depois
+     * não altera contas já encerradas.
+     */
+    closeClient(id, method) {
       const c = findClient(id);
       if (!c || c.closedAt || !c.items.length) return null;
-      c.closedAt = new Date().toISOString();
+      if (!Billing.METHODS.some((m) => m.id === method)) return null;
+      const b = Billing.bill(c, state.products);
+      const now = new Date().toISOString();
+      c.closedAt = now;
+      c.payment = { method, totalCents: b.totalCents, missing: b.missing, items: b.lines, paidAt: now };
       commit({ type: 'client:close', clientId: id });
       return c;
     },
@@ -137,6 +147,7 @@ const Store = (() => {
       const c = findClient(id);
       if (!c || !c.closedAt) return null;
       delete c.closedAt;
+      delete c.payment;
       commit({ type: 'client:reopen', clientId: id });
       return c;
     },
@@ -208,9 +219,54 @@ const Store = (() => {
       emit({ type: 'replace' });
     },
 
+    /* ---------- Produtos e preços (administrador) ---------- */
+    products: () => state.products,
+
+    /** Retorna { ok: true, product } ou { ok: false, error }. */
+    addProduct({ name, price }) {
+      const n = clean(name || '');
+      if (n.length < 2) return { ok: false, error: 'Digite o nome do produto.' };
+      if (price == null) return { ok: false, error: 'Digite um preço válido, por exemplo 5,00.' };
+      if (Billing.findProduct(state.products, n)) return { ok: false, error: 'Esse produto já está na lista.' };
+      const product = { id: uid(), name: n, price };
+      state.products.push(product);
+      commit({ type: 'product:add', productId: product.id });
+      return { ok: true, product };
+    },
+
+    updateProduct(id, { name, price }) {
+      const p = state.products.find((x) => x.id === id);
+      if (!p) return { ok: false, error: 'Produto não encontrado.' };
+      const n = clean(name || '');
+      if (n.length < 2) return { ok: false, error: 'Digite o nome do produto.' };
+      if (price == null) return { ok: false, error: 'Digite um preço válido, por exemplo 5,00.' };
+      const other = Billing.findProduct(state.products, n);
+      if (other && other.id !== id) return { ok: false, error: 'Já existe outro produto com esse nome.' };
+      p.name = n;
+      p.price = price;
+      commit({ type: 'product:update', productId: id });
+      return { ok: true, product: p };
+    },
+
+    removeProduct(id) {
+      const index = state.products.findIndex((x) => x.id === id);
+      if (index < 0) return null;
+      const [product] = state.products.splice(index, 1);
+      commit({ type: 'product:remove', productId: id });
+      return { product, index };
+    },
+
+    restoreProduct(product, index) {
+      state.products.splice(Math.min(index, state.products.length), 0, product);
+      commit({ type: 'product:add', productId: product.id });
+    },
+
+    /** Conta do cliente com valores (ver billing.js). */
+    billOf: (client) => Billing.bill(client, state.products),
+
     /** Tudo o que precisa para restaurar o sistema em outro aparelho. */
     backup() {
-      return { app: 'comanda', version: 2, exportedAt: new Date().toISOString(), estado: state };
+      return { app: 'comanda', version: 3, exportedAt: new Date().toISOString(), estado: state };
     },
 
     /** Restaura um backup. Retorna false se o arquivo não for um backup válido. */

@@ -51,7 +51,26 @@
     itemProduct: $('#itemProduct'),
     itemQty: $('#itemQty'),
     productError: $('#productError'),
-    itemCurrent: $('#itemCurrent')
+    productSuggest: $('#productSuggest'),
+    productHint: $('#productHint'),
+    itemCurrent: $('#itemCurrent'),
+
+    loginDialog: $('#loginDialog'),
+    loginForm: $('#loginForm'),
+    loginUser: $('#loginUser'),
+    loginPass: $('#loginPass'),
+    loginError: $('#loginError'),
+    loginSubmit: $('#loginSubmit'),
+    btnLogout: $('#btnLogout'),
+
+    closeDialog: $('#closeDialog'),
+    closeForm: $('#closeForm'),
+    closeSub: $('#closeSub'),
+    closeBill: $('#closeBill'),
+    closeWarning: $('#closeWarning'),
+    closeTotal: $('#closeTotal'),
+    payOptions: $('#payOptions'),
+    payError: $('#payError')
   };
 
   let filter = 'all';
@@ -221,23 +240,67 @@
   /* =====================================================
      Encerrar / reabrir conta
      ===================================================== */
-  async function closeClient(clientId, card) {
-    const client = Store.getClient(clientId);
-    if (!client || !client.items.length) return;
-    const ok = await UI.confirm({
-      title: `Encerrar a conta de ${client.name}?`,
-      message: client.items.map((i) => `${i.qty} ${i.product}`).join(' · '),
-      confirmText: 'Encerrar conta',
-      tone: 'done',
-      icon: 'receipt'
-    });
-    if (!ok) return;
+  let closingId = null;
+  let closingCard = null;
 
-    await UI.animateCardOut(card);
-    Store.closeClient(clientId);
-    UI.toast(`Conta de ${client.name} encerrada`, {
+  function billTable(bill) {
+    const rows = bill.lines.map((l) => `
+      <tr${l.unitCents == null ? ' class="is-missing"' : ''}>
+        <td class="num">${l.qty}</td>
+        <td>${Utils.escapeHTML(l.product)}</td>
+        <td class="num">${l.unitCents == null ? '—' : Billing.money(l.unitCents)}</td>
+        <td class="num">${l.totalCents == null ? 'sem preço' : Billing.money(l.totalCents)}</td>
+      </tr>`).join('');
+    return `<table class="bill-table">
+      <thead><tr><th class="num">Qtd</th><th>Produto</th><th class="num">Valor unitário</th><th class="num">Valor total</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  /** Abre a conta com valor de cada produto, total e a escolha da forma de pagamento. */
+  function openCloseDialog(clientId, card) {
+    const client = Store.getClient(clientId);
+    if (!client || client.closedAt || !client.items.length) return;
+    closingId = clientId;
+    closingCard = card;
+
+    const bill = Store.billOf(client);
+    const table = client.table ? ` · Mesa ${Utils.escapeHTML(client.table)}` : '';
+    els.closeSub.innerHTML = `<strong>${Utils.escapeHTML(client.name)}</strong>${table}`;
+    els.closeBill.innerHTML = billTable(bill);
+    els.closeTotal.textContent = Billing.money(bill.totalCents);
+    els.closeWarning.hidden = !bill.missing;
+    if (bill.missing) {
+      els.closeWarning.textContent = `${Utils.plural(bill.missing, 'item está', 'itens estão')} sem preço na lista e não ${bill.missing === 1 ? 'entra' : 'entram'} no total. Cadastre em "Produtos e preços" antes de encerrar para incluir.`;
+    }
+    els.payOptions.innerHTML = Billing.METHODS.map((m) => `
+      <label class="pay__opt">
+        <input type="radio" name="pay" value="${m.id}">
+        <span>${m.label}</span>
+      </label>`).join('');
+    els.payError.textContent = '';
+    UI.Modal.open(els.closeDialog);
+  }
+
+  async function confirmClose(e) {
+    e.preventDefault();
+    const method = els.closeForm.querySelector('input[name="pay"]:checked')?.value;
+    if (!method) {
+      els.payError.textContent = 'Escolha a forma de pagamento.';
+      UI.shake(els.payOptions);
+      return;
+    }
+    const id = closingId;
+    const client = Store.getClient(id);
+    if (!client) return;
+
+    UI.Modal.close(els.closeDialog);
+    await UI.animateCardOut(closingCard);
+    const closed = Store.closeClient(id, method);
+    if (!closed) return;
+    UI.toast(`${client.name}: ${Billing.money(closed.payment.totalCents)} no ${Billing.methodLabel(method)}`, {
       type: 'success',
-      action: { label: 'Desfazer', onClick: () => Store.reopenClient(clientId) }
+      action: { label: 'Desfazer', onClick: () => Store.reopenClient(id) }
     });
   }
 
@@ -264,6 +327,82 @@
       .join(' &nbsp;·&nbsp; ');
   }
 
+  /* ---------- Sugestões da lista de produtos ---------- */
+  let suggestIndex = -1;
+  let suggestMatches = [];
+
+  function hideSuggestions() {
+    els.productSuggest.hidden = true;
+    els.itemProduct.setAttribute('aria-expanded', 'false');
+    suggestIndex = -1;
+  }
+
+  function matchProducts(text) {
+    const q = Billing.norm(text);
+    if (!q) return [];
+    return Store.products()
+      .filter((p) => Billing.norm(p.name).includes(q))
+      .sort((a, b) => {
+        const sa = Billing.norm(a.name).startsWith(q) ? 0 : 1;
+        const sb = Billing.norm(b.name).startsWith(q) ? 0 : 1;
+        return sa - sb || a.name.localeCompare(b.name, 'pt-BR');
+      })
+      .slice(0, 8);
+  }
+
+  function updateProductHint() {
+    const text = els.itemProduct.value.trim();
+    let msg = '';
+    let warn = false;
+    if (!Store.products().length) {
+      msg = 'Nenhum produto cadastrado ainda. Cadastre em "Produtos e preços" para a conta sair com valores.';
+    } else if (text) {
+      const exact = Billing.findProduct(Store.products(), text);
+      if (exact) msg = `${Billing.money(Billing.toCents(exact.price))} cada`;
+      else { msg = 'Fora da lista: este item vai ficar sem preço na conta.'; warn = true; }
+    }
+    els.productHint.hidden = !msg;
+    els.productHint.textContent = msg;
+    els.productHint.classList.toggle('is-warn', warn);
+  }
+
+  function highlightSuggestion() {
+    els.productSuggest.querySelectorAll('.suggest__item').forEach((el, i) => {
+      el.classList.toggle('is-active', i === suggestIndex);
+      if (i === suggestIndex) el.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function renderSuggestions() {
+    suggestMatches = matchProducts(els.itemProduct.value);
+    const exact = Billing.findProduct(Store.products(), els.itemProduct.value);
+    // Só mostra a lista enquanto digita, e some quando o nome já está completo
+    if (!suggestMatches.length || (exact && suggestMatches.length === 1)) {
+      hideSuggestions();
+    } else {
+      els.productSuggest.innerHTML = suggestMatches.map((p, i) => `
+        <li class="suggest__item" role="option" data-index="${i}">
+          <span>${Utils.escapeHTML(p.name)}</span>
+          <strong>${Billing.money(Billing.toCents(p.price))}</strong>
+        </li>`).join('');
+      els.productSuggest.hidden = false;
+      els.itemProduct.setAttribute('aria-expanded', 'true');
+      suggestIndex = -1;
+    }
+    updateProductHint();
+  }
+
+  function chooseSuggestion(index) {
+    const p = suggestMatches[index];
+    if (!p) return;
+    els.itemProduct.value = p.name;
+    setFieldError(els.itemProduct, els.productError, '');
+    hideSuggestions();
+    updateProductHint();
+    els.itemQty.focus();
+    els.itemQty.select();
+  }
+
   function openItemDialog(clientId) {
     const client = Store.getClient(clientId);
     if (!client) return;
@@ -273,6 +412,8 @@
     els.itemProduct.value = '';
     els.itemQty.value = 1;
     setFieldError(els.itemProduct, els.productError, '');
+    hideSuggestions();
+    updateProductHint();
     renderCurrentItems();
     UI.Modal.open(els.itemDialog);
     els.itemProduct.focus();
@@ -306,6 +447,8 @@
     if (keepOpen) {
       els.itemProduct.value = '';
       els.itemQty.value = 1;
+      hideSuggestions();
+      updateProductHint();
       renderCurrentItems();
       els.itemProduct.focus();
     } else {
@@ -326,30 +469,78 @@
   /* =====================================================
      Obsidian
      ===================================================== */
-  // Só aparece se algo der errado; com o servidor ligado, nada é mostrado
+  // Faixa de aviso: só aparece se algo der errado; com o servidor ligado, nada é mostrado
   const bannerTexts = {
-    file: 'Sem banco de dados: a página foi aberta direto do arquivo. Use o atalho "Comanda" para gravar no Obsidian.',
-    offline: 'Banco desconectado: o servidor não está respondendo. Use o atalho "Comanda" para ligar de novo. Nada se perde: as alterações ficam aqui e são enviadas quando voltar.'
+    offline: 'Sem conexão com o servidor. Se ele estiver acordando, aguarde alguns segundos. Nada se perde: o que você lançar fica neste aparelho e é enviado quando voltar.'
   };
 
-  function renderBanner(status) {
+  function onStatusChange(status) {
     const banner = bannerTexts[status];
     els.dbBanner.hidden = !banner;
     if (banner) els.dbBannerText.textContent = banner;
+
+    // Sem login, o conteúdo fica escondido atrás da janela de entrada
+    document.body.classList.toggle('is-locked', status === 'login');
+    if (status === 'login') openLogin();
+    els.btnLogout.hidden = !(Obsidian.isAuthRequired() && Obsidian.hasSession() && status !== 'login');
   }
 
-  /** Decide quem vale: os dados do navegador ou os do Obsidian. */
+  /* ---------- Login ---------- */
+  function openLogin() {
+    if (els.loginDialog.open) return;
+    els.loginPass.value = '';
+    els.loginError.textContent = '';
+    els.loginUser.value = Obsidian.user();
+    UI.Modal.open(els.loginDialog);
+    (els.loginUser.value ? els.loginPass : els.loginUser).focus();
+  }
+
+  async function submitLogin(e) {
+    e.preventDefault();
+    const usuario = els.loginUser.value.trim();
+    const senha = els.loginPass.value;
+    if (!usuario || !senha) {
+      els.loginError.textContent = 'Digite o usuário e a senha.';
+      UI.shake(els.loginForm.querySelector('.modal__body'));
+      return;
+    }
+    els.loginSubmit.disabled = true;
+    els.loginSubmit.textContent = 'Entrando…';
+    try {
+      const remote = await Obsidian.login(usuario, senha);
+      els.loginPass.value = '';
+      UI.Modal.close(els.loginDialog);
+      syncWithVault(remote, true);
+    } catch (err) {
+      els.loginError.textContent = err.message;
+      UI.shake(els.loginForm.querySelector('.modal__body'));
+      els.loginPass.focus();
+      els.loginPass.select();
+    } finally {
+      els.loginSubmit.disabled = false;
+      els.loginSubmit.textContent = 'Entrar';
+    }
+  }
+
+  /** Lista sem nenhum cliente nem produto (ex.: servidor que acabou de ser reiniciado). */
+  const isEmptyState = (state) => !state.clients.length && !(state.products || []).length;
+
+  /**
+   * Decide quem vale: os dados deste aparelho ou os do servidor.
+   * - Servidor vazio (reiniciou) + dados no aparelho: devolve os dados ao servidor.
+   * - Aparelho zerado + dados no servidor: traz os dados do servidor.
+   * - Os dois com dados: vale o mais recente.
+   */
   function syncWithVault(remote, silent = false) {
     const local = Store.get();
-    const remoteOk = Store.isValidState(remote);
+    const remoteHasData = Store.isValidState(remote) && !isEmptyState(remote);
 
-    // O cofre é a fonte principal; o navegador só ganha se tiver alterações mais novas (feitas offline)
-    if (remoteOk && (local.pristine || remote.updatedAt >= local.updatedAt)) {
+    if (remoteHasData && (local.pristine || remote.updatedAt >= local.updatedAt)) {
       if (remote.updatedAt === local.updatedAt) return;
       UI.resetSeen();
       Store.replace(remote);
-      if (!silent) UI.toast(`Dados carregados do Obsidian (${Utils.plural(remote.clients.length, 'cliente', 'clientes')})`, { type: 'success' });
-    } else {
+      if (!silent) UI.toast(`Dados carregados do servidor (${Utils.plural(remote.clients.length, 'cliente', 'clientes')})`, { type: 'success' });
+    } else if (!local.pristine) {
       Obsidian.saveNow(local);
     }
   }
@@ -644,7 +835,7 @@
         case 'add-item': openItemDialog(clientId); break;
         case 'edit': openClientDialog(clientId); break;
         case 'delete': deleteClient(clientId, card); break;
-        case 'close': closeClient(clientId, card); break;
+        case 'close': openCloseDialog(clientId, card); break;
         case 'reopen': reopenClient(clientId, card); break;
         case 'inc': changeQty(clientId, itemId, 1); break;
         case 'dec': changeQty(clientId, itemId, -1); break;
@@ -659,6 +850,30 @@
     els.itemQty.addEventListener('blur', () => { els.itemQty.value = readQty(); });
     els.itemProduct.addEventListener('input', () => {
       if (els.productError.textContent) setFieldError(els.itemProduct, els.productError, '');
+      renderSuggestions();
+    });
+    els.itemProduct.addEventListener('keydown', (e) => {
+      if (els.productSuggest.hidden) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const n = suggestMatches.length;
+        suggestIndex = e.key === 'ArrowDown' ? (suggestIndex + 1) % n : (suggestIndex - 1 + n) % n;
+        highlightSuggestion();
+      } else if (e.key === 'Enter' && suggestIndex >= 0) {
+        e.preventDefault();
+        chooseSuggestion(suggestIndex);
+      } else if (e.key === 'Escape') {
+        // Esc fecha só a lista (sem fechar a janela)
+        e.preventDefault();
+        e.stopPropagation();
+        hideSuggestions();
+      }
+    });
+    // Não tira o foco do campo ao tocar numa sugestão
+    els.productSuggest.addEventListener('pointerdown', (e) => e.preventDefault());
+    els.productSuggest.addEventListener('click', (e) => {
+      const item = e.target.closest('.suggest__item');
+      if (item) chooseSuggestion(Number(item.dataset.index));
     });
 
     // Busca e filtro
@@ -681,6 +896,27 @@
     });
 
     UI.Modal.bind(els.itemsDialog);
+
+    // Fechar conta
+    UI.Modal.bind(els.closeDialog);
+    els.closeForm.addEventListener('submit', confirmClose);
+    els.payOptions.addEventListener('change', () => { els.payError.textContent = ''; });
+
+    // Produtos e preços, login e sair
+    $('#btnProducts').addEventListener('click', () => Products.open());
+    els.loginForm.addEventListener('submit', submitLogin);
+    els.loginDialog.addEventListener('cancel', (e) => e.preventDefault());   // sem senha, não fecha
+    els.loginForm.addEventListener('input', () => { els.loginError.textContent = ''; });
+    els.btnLogout.addEventListener('click', async () => {
+      const ok = await UI.confirm({
+        title: 'Sair da Comanda?',
+        message: 'Você vai precisar entrar de novo com usuário e senha.',
+        confirmText: 'Sair',
+        tone: 'primary',
+        icon: 'unlink'
+      });
+      if (ok) Obsidian.logout();
+    });
 
     // Métricas
     UI.Modal.bind(els.metricsDialog);
@@ -741,7 +977,8 @@
     if (reason.type !== 'replace') Obsidian.scheduleSave(state);
   });
 
-  Obsidian.onStatus(renderBanner);
+  Obsidian.onStatus(onStatusChange);
+  Obsidian.onReconnect((remote) => syncWithVault(remote, true));
 
   bindEvents();
   render();

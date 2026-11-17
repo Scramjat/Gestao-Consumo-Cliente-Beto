@@ -1,0 +1,26 @@
+# Render: publica o sistema na internet, com o banco de dados rodando no servidor.
+# No Render: New + → Blueprint → escolha este repositório. O Render lê este arquivo.
+#
+# A senha do administrador NÃO fica no código (o repositório é público):
+# o Render pergunta ADMIN_PASSWORD na hora de criar. Para trocar depois:
+# Dashboard → o serviço → Environment → ADMIN_PASSWORD.
+
+services:
+  - type: web
+    name: gestao-consumo-cliente-beto
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: echo "Sem dependências para instalar"
+    startCommand: node server/server.js
+    healthCheckPath: /api/saude
+    autoDeploy: true
+    envVars:
+      - key: ADMIN_USER
+        value: Admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NODE_VERSION
+        value: 22

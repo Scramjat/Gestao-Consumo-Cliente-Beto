@@ -1,0 +1,209 @@
+/* =========================================================
+   Valores, pagamento, produtos e login
+   ========================================================= */
+
+/* ---------- Sem login: o conteúdo fica escondido ---------- */
+.is-locked .container,
+.is-locked .topbar__actions,
+.is-locked .fab { visibility: hidden; }
+
+/* ---------- Login ---------- */
+.login { align-items: stretch; padding-top: 28px; gap: 14px; }
+.login .brand__logo { align-self: center; width: 56px; height: 56px; border-radius: 16px; }
+.login .brand__logo svg { width: 30px; height: 30px; }
+.login h2 { text-align: center; font-size: 20px; }
+.login__sub { margin-top: -10px; text-align: center; font-size: 14px; color: var(--text-muted); }
+#loginDialog .modal__foot .btn { flex: 1; }
+
+/* ---------- Valores no cartão do cliente ---------- */
+.item__price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.item__price strong { font-size: 14.5px; }
+.item__price small { font-size: 11.5px; color: var(--text-faint); }
+.item__price.is-missing small { color: var(--warning); font-weight: 600; }
+
+.bill-sub,
+.bill-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.bill-sub { background: var(--surface-2); font-size: 13.5px; color: var(--text-muted); }
+.bill-sub strong { margin-left: auto; font-size: 15px; color: var(--text); }
+.bill-sub small { flex-basis: 100%; font-size: 12px; color: var(--warning); font-weight: 600; }
+
+.bill-foot { background: var(--success-soft); }
+.bill-foot__label { font-size: 13px; font-weight: 600; color: var(--success); }
+.bill-foot__total { margin-left: auto; font-size: 20px; font-weight: 750; letter-spacing: -.01em; }
+.bill-foot__warn { flex-basis: 100%; font-size: 12px; color: var(--warning); font-weight: 600; }
+.pay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-basis: 100%;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+.pay-badge .icon { width: 14px; height: 14px; color: var(--success); }
+.pay-badge::before { content: 'Pagamento:'; font-weight: 500; color: var(--text-muted); order: -1; margin-right: 2px; }
+.pay-badge .icon { order: -1; }
+
+/* ---------- Janela de fechar conta ---------- */
+.bill-wrap { overflow-x: auto; margin: 0 -4px; }
+.bill-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.bill-table th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.bill-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); }
+.bill-table .num { text-align: right; white-space: nowrap; }
+.bill-table td:first-child { font-weight: 700; color: var(--primary-text); }
+.bill-table tr.is-missing td { color: var(--text-muted); }
+.bill-table tr.is-missing td:last-child { color: var(--warning); font-weight: 600; }
+
+.bill-warning {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--warning-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.bill-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--success-soft);
+}
+.bill-total span { font-size: 14px; font-weight: 650; color: var(--success); }
+.bill-total strong { font-size: 28px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+.pay { margin: 0; padding: 0; border: 0; min-width: 0; }
+.pay legend { padding: 0; margin-bottom: 8px; font-size: 13.5px; font-weight: 600; }
+.pay__options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pay__opt { position: relative; cursor: pointer; }
+.pay__opt input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pay__opt span {
+  display: grid;
+  place-items: center;
+  height: 52px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface-2);
+  font-weight: 700;
+  transition: background-color .15s, border-color .15s, color .15s, transform .1s, box-shadow .2s;
+}
+.pay__opt:hover span { border-color: var(--text-faint); }
+.pay__opt:active span { transform: scale(.97); }
+.pay__opt input:focus-visible + span { box-shadow: var(--ring); }
+.pay__opt input:checked + span { border-color: var(--success); background: var(--success); color: #fff; }
+.pay .field__error { display: block; margin-top: 6px; }
+
+/* Botão verde cheio (confirmar encerramento) */
+.btn--done.btn--solid { --btn-bg: var(--success); --btn-fg: #fff; }
+.btn--done.btn--solid:hover { filter: brightness(1.08); --btn-bg: var(--success); }
+
+/* ---------- Sugestões da lista de produtos (campo "O que pediu?") ---------- */
+.suggest {
+  list-style: none;
+  margin: -8px 0 0;
+  padding: 4px;
+  max-height: 216px;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.suggest__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.suggest__item span { min-width: 0; overflow-wrap: anywhere; }
+.suggest__item strong { flex: none; font-size: 13.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.suggest__item:hover,
+.suggest__item.is-active { background: var(--primary-soft); }
+.suggest__item.is-active strong,
+.suggest__item:hover strong { color: var(--primary-text); }
+
+.field__note { margin: -8px 0 0; font-size: 13px; color: var(--text-muted); }
+.field__note.is-warn { color: var(--warning); font-weight: 600; }
+
+/* ---------- Produtos e preços ---------- */
+.prod-add {
+  display: grid;
+  grid-template-columns: 1fr 140px auto;
+  align-items: end;
+  gap: 10px 12px;
+}
+.prod-add .btn { height: 46px; }
+.prod-add__error { grid-column: 1 / -1; margin-top: -4px; }
+
+#productsDialog .search { flex: none; }
+
+.prod-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.prod {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  transition: background-color .15s;
+}
+.prod:hover { background: var(--surface-3); }
+.prod.is-new { animation: item-in .3s ease-out both, flash 1.2s ease-out; }
+.prod__name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.prod__price { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prod__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+
+.prod.is-editing { flex-wrap: wrap; background: var(--primary-soft); }
+.prod__input {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 15px;
+}
+.prod__input:focus { outline: 0; border-color: var(--primary); box-shadow: var(--ring); }
+.prod__input--name { flex: 1; min-width: 140px; }
+.prod__input--price { width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
+.prod__error { flex-basis: 100%; }
+
+.prod-empty { padding: 28px 12px; text-align: center; color: var(--text-faint); font-size: 14px; }
+
+@media (max-width: 560px) {
+  .prod-add { grid-template-columns: 1fr 110px; }
+  .prod-add .btn { grid-column: 1 / -1; width: 100%; }
+  .bill-table { font-size: 13px; }
+  .bill-table th, .bill-table td { padding-left: 5px; padding-right: 5px; }
+  .pay__options { gap: 6px; }
+  .bill-total strong { font-size: 24px; }
+}

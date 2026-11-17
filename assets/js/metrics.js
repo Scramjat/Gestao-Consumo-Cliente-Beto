@@ -110,6 +110,19 @@ const Metrics = (() => {
 
     // Contas encerradas no período: tempo de permanência
     const closed = state.clients.filter((c) => c.closedAt && new Date(c.closedAt).getTime() >= start);
+
+    // Faturamento: contas encerradas no período, com os valores guardados no pagamento
+    const paid = closed.filter((c) => c.payment);
+    const revenueCents = paid.reduce((sum, c) => sum + c.payment.totalCents, 0);
+    const avgTicketCents = paid.length ? Math.round(revenueCents / paid.length) : null;
+    const byMethod = new Map();
+    paid.forEach((c) => {
+      const e = byMethod.get(c.payment.method) || { method: c.payment.method, cents: 0, count: 0 };
+      e.cents += c.payment.totalCents;
+      e.count += 1;
+      byMethod.set(c.payment.method, e);
+    });
+    const methods = [...byMethod.values()].sort((a, b) => b.cents - a.cents);
     const stays = closed.map((c) => new Date(c.closedAt) - new Date(c.createdAt));
     const avgStay = stays.length ? stays.reduce((s, v) => s + v, 0) / stays.length : null;
 
@@ -135,7 +148,8 @@ const Metrics = (() => {
 
     return {
       orders, totalItems, clients, products, hours, peakHour, byDay, weekdays, tables,
-      closed, avgStay, avgFirstWait, open, lastHourItems
+      closed, avgStay, avgFirstWait, open, lastHourItems,
+      paid, revenueCents, avgTicketCents, methods
     };
   }
 
@@ -193,14 +207,14 @@ const Metrics = (() => {
   }
 
   /** Barras horizontais com o valor na ponta. */
-  function bars(rows, unit = 'itens') {
+  function bars(rows, unit = 'itens', fmt = fmtNum) {
     if (!rows.length) return '<p class="mx-empty">Sem dados no período.</p>';
     const max = Math.max(...rows.map((r) => r.value));
     return `<ul class="mx-bars">${rows.map((r) => `
-      <li class="mx-bar" data-viz-tip="${esc(`${r.tipLabel || r.label}: ${fmtNum(r.value)} ${unit}${r.extra ? ` · ${r.extra}` : ''}`)}">
+      <li class="mx-bar" data-viz-tip="${esc(`${r.tipLabel || r.label}: ${fmt(r.value)}${unit ? ` ${unit}` : ''}${r.extra ? ` · ${r.extra}` : ''}`)}">
         <span class="mx-bar__label">${esc(r.label)}${r.sub ? ` <em>${esc(r.sub)}</em>` : ''}</span>
         <span class="mx-bar__track"><span class="mx-bar__fill" style="width:${(r.value / max) * 100}%"></span></span>
-        <span class="mx-bar__value">${fmtNum(r.value)}</span>
+        <span class="mx-bar__value">${fmt(r.value)}</span>
       </li>`).join('')}</ul>`;
   }
 
@@ -223,6 +237,9 @@ const Metrics = (() => {
     const peak = m.peakHour;
 
     const kpis = [
+      kpi('Faturamento', m.paid.length ? Billing.money(m.revenueCents) : '—',
+        m.paid.length ? `${fmtNum(m.paid.length)} ${m.paid.length === 1 ? 'conta paga' : 'contas pagas'}` : 'nenhuma conta paga'),
+      kpi('Ticket médio', m.avgTicketCents != null ? Billing.money(m.avgTicketCents) : '—', 'valor médio por conta paga'),
       kpi('Itens pedidos', fmtNum(m.totalItems), `em ${fmtNum(m.orders.length)} ${m.orders.length === 1 ? 'pedido' : 'pedidos'}`),
       kpi('Clientes atendidos', fmtNum(served), `média de ${fmtNum(m.totalItems / served, 1)} itens por cliente`),
       kpi('Horário de pico', `${hourLabel(peak)}–${hourLabel((peak + 1) % 24)}`, `${fmtNum(m.hours[peak])} itens nessa hora`),
@@ -253,6 +270,15 @@ const Metrics = (() => {
         value: e.items,
         extra: `${e.orders} ${e.orders === 1 ? 'pedido' : 'pedidos'}`
       })))));
+
+    if (m.methods.length) {
+      sections.push(card('Formas de pagamento', 'Valor recebido em cada forma',
+        bars(m.methods.map((e) => ({
+          label: Billing.methodLabel(e.method),
+          value: e.cents,
+          extra: `${e.count} ${e.count === 1 ? 'conta' : 'contas'}`
+        })), '', (cents) => Billing.money(cents))));
+    }
 
     sections.push(card('Produtos mais pedidos', `Unidades por produto · top ${Math.min(10, m.products.length)}`,
       bars(m.products.slice(0, 10).map((p) => ({

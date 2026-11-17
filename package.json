@@ -1,0 +1,12 @@
+{
+  "name": "gestao-consumo-cliente-beto",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gestão Consumo Cliente - Beto",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

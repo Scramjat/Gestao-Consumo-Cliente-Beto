@@ -108,7 +108,17 @@ const UI = (() => {
     return item.orders.map((o) => `${fmt(o.at)} (${o.qty})`).join(full ? '\n' : ' · ');
   }
 
-  function itemRow(item, highlight, closed) {
+  /** Valor da linha numa conta encerrada: total em destaque e "4 × R$ 10,00" embaixo. */
+  function priceCell(line) {
+    if (!line) return '';
+    if (line.unitCents == null) return '<span class="item__price is-missing"><small>sem preço</small></span>';
+    return `<span class="item__price">
+      <strong>${Billing.money(line.totalCents)}</strong>
+      <small>${line.qty} × ${Billing.money(line.unitCents)}</small>
+    </span>`;
+  }
+
+  function itemRow(item, highlight, closed, line) {
     const cls = highlight === 'new' ? 'is-new' : highlight === 'pulse' ? 'is-pulse' : '';
     return `
       <li class="item ${cls}" data-item-id="${item.id}">
@@ -117,7 +127,7 @@ const UI = (() => {
           ${esc(item.product)}
           <span class="item__when" title="${orderTimes(item, true)}">${Icons.svg('clock')} ${orderTimes(item)}</span>
         </span>
-        ${closed ? '' : `<span class="item__actions">
+        ${closed ? priceCell(line) : `<span class="item__actions">
           <button class="mini-btn" data-action="dec" aria-label="Diminuir ${esc(item.product)}">${Icons.svg('minus')}</button>
           <button class="mini-btn" data-action="inc" aria-label="Aumentar ${esc(item.product)}">${Icons.svg('plus')}</button>
         </span>`}
@@ -130,13 +140,33 @@ const UI = (() => {
     const closed = !!client.closedAt;
     const sameClient = reason && reason.clientId === client.id;
 
-    const items = client.items.map((item) => {
+    // Valores da conta (encerrada: os guardados no pagamento; aberta: lista de preços atual)
+    const bill = Billing.bill(client, Store.products());
+
+    const items = client.items.map((item, i) => {
       let highlight = null;
       if (sameClient && reason.itemId === item.id) {
         highlight = reason.type === 'item:add' && reason.isNew ? 'new' : 'pulse';
       }
-      return itemRow(item, highlight, closed);
+      return itemRow(item, highlight, closed, closed && client.payment ? bill.lines[i] : null);
     }).join('');
+
+    // Parcial (conta aberta) ou total pago (conta encerrada)
+    let billBox = '';
+    if (closed && client.payment) {
+      billBox = `<div class="bill-foot">
+        <span class="bill-foot__label">Total consumido</span>
+        <strong class="bill-foot__total">${Billing.money(bill.totalCents)}</strong>
+        <span class="pay-badge">${Icons.svg('receipt')} ${esc(Billing.methodLabel(bill.method))}</span>
+        ${bill.missing ? `<small class="bill-foot__warn">${Utils.plural(bill.missing, 'item', 'itens')} sem preço</small>` : ''}
+      </div>`;
+    } else if (!closed && locked && (bill.totalCents || bill.missing < bill.lines.length)) {
+      billBox = `<div class="bill-sub">
+        <span>Parcial</span>
+        <strong>${Billing.money(bill.totalCents)}</strong>
+        ${bill.missing ? `<small>${Utils.plural(bill.missing, 'item', 'itens')} sem preço</small>` : ''}
+      </div>`;
+    }
 
     const classes = ['client-card'];
     if (closed) classes.push('is-closed');
@@ -180,6 +210,7 @@ const UI = (() => {
         ${locked
           ? `<ul class="item-list">${items}</ul>`
           : '<p class="item-empty">Nada consumido ainda</p>'}
+        ${billBox}
 
         <footer class="client-card__foot">
           ${footer}

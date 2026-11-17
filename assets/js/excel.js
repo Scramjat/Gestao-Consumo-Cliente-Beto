@@ -9,14 +9,15 @@
 
 (function (root) {
   /* ---------- Formatos de célula (índices de styles.xml) ---------- */
-  const S = { text: 0, header: 1, dateTime: 2, date: 3, time: 4, bold: 5, number: 6, open: 7, closed: 8 };
+  const S = { text: 0, header: 1, dateTime: 2, date: 3, time: 4, bold: 5, number: 6, open: 7, closed: 8, money: 9 };
 
   const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<numFmts count="3">
+<numFmts count="4">
 <numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm:ss"/>
 <numFmt numFmtId="165" formatCode="dd/mm/yyyy"/>
 <numFmt numFmtId="166" formatCode="hh:mm:ss"/>
+<numFmt numFmtId="167" formatCode="&quot;R$&quot;\ #,##0.00"/>
 </numFmts>
 <fonts count="4">
 <font><sz val="11"/><name val="Calibri"/><family val="2"/></font>
@@ -35,7 +36,7 @@
 <border><left/><right/><top/><bottom style="thin"><color rgb="FFE6E1D8"/></bottom><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="9">
+<cellXfs count="10">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment vertical="top" wrapText="1"/></xf>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>
 <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="left" vertical="top"/></xf>
@@ -45,6 +46,7 @@
 <xf numFmtId="1" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="center" vertical="top"/></xf>
 <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="top"/></xf>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="top"/></xf>
+<xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"><alignment horizontal="right" vertical="top"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -115,6 +117,11 @@
     return /^\d+$/.test(t) ? num(Number(t)) : txt(t);
   }
 
+  /** Valor em reais (célula numérica com formato de moeda); vazio quando não tem preço. */
+  const money = (cents) => (cents == null ? txt('') : num(cents / 100, S.money));
+
+  const methodName = (id) => (typeof Billing !== 'undefined' ? Billing.methodLabel(id) : '');
+
   function situation(client) {
     return client.closedAt ? txt('Encerrada', S.closed) : txt('Aberta', S.open);
   }
@@ -128,6 +135,13 @@
   function buildSheets(state) {
     const clients = state.clients.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
+    // Conta de cada cliente (encerrada: valores guardados no pagamento; aberta: preços atuais)
+    const bills = new Map(clients.map((c) => [c, Billing.bill(c, state.products || [])]));
+    const lineOf = (client, product) => {
+      const key = Billing.norm(product);
+      return bills.get(client).lines.find((l) => Billing.norm(l.product) === key) || {};
+    };
+
     // Aba 1: Clientes
     const clientRows = clients.map((c) => {
       const total = c.items.reduce((s, i) => s + i.qty, 0);
@@ -140,6 +154,8 @@
         situation(c),
         when(c.closedAt, S.dateTime),
         num(total),
+        money(c.items.length ? bills.get(c).totalCents : null),
+        txt(methodName(bills.get(c).method)),
         when(firstOrder, S.dateTime),
         txt(c.items.map((i) => `${i.qty} ${i.product}`).join('\n'))
       ];
@@ -151,46 +167,63 @@
       orders.push({ at: o.at, client: c, product: item.product, qty: o.qty });
     })));
     orders.sort((a, b) => a.at.localeCompare(b.at));
-    const orderRows = orders.map((o) => [
-      when(o.at, S.date),
-      when(o.at, S.time),
-      txt(o.client.name, S.bold),
-      tableCell(o.client),
-      txt(o.product),
-      num(o.qty),
-      txt(formatCPF(o.client.cpf)),
-      situation(o.client)
-    ]);
+    const orderRows = orders.map((o) => {
+      const unit = lineOf(o.client, o.product).unitCents;
+      return [
+        when(o.at, S.date),
+        when(o.at, S.time),
+        txt(o.client.name, S.bold),
+        tableCell(o.client),
+        txt(o.product),
+        num(o.qty),
+        money(unit == null ? null : unit),
+        money(unit == null ? null : unit * o.qty),
+        txt(formatCPF(o.client.cpf)),
+        situation(o.client)
+      ];
+    });
 
     // Aba 3: Produtos
     const products = {};
     orders.forEach((o) => {
       const key = o.product.toLowerCase();
-      products[key] ||= { name: o.product, qty: 0, clients: new Set() };
+      const unit = lineOf(o.client, o.product).unitCents;
+      products[key] ||= { name: o.product, qty: 0, cents: 0, priced: false, clients: new Set() };
       products[key].qty += o.qty;
+      if (unit != null) { products[key].cents += unit * o.qty; products[key].priced = true; }
       products[key].clients.add(o.client.name);
     });
     const productRows = Object.values(products)
       .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name, 'pt-BR'))
-      .map((p) => [txt(p.name, S.bold), num(p.qty), num(p.clients.size), txt([...p.clients].join(', '))]);
+      .map((p) => {
+        const listed = Billing.findProduct(state.products || [], p.name);
+        return [
+          txt(p.name, S.bold),
+          num(p.qty),
+          money(listed ? Billing.toCents(listed.price) : null),
+          money(p.priced ? p.cents : null),
+          num(p.clients.size),
+          txt([...p.clients].join(', '))
+        ];
+      });
 
     return [
       {
         name: 'Clientes',
-        headers: ['Cliente', 'Mesa', 'CPF', 'Cadastro', 'Situação', 'Encerrada em', 'Itens', 'Primeiro pedido', 'Consumo'],
-        widths: [24, 8, 16, 21, 12, 21, 8, 21, 42],
+        headers: ['Cliente', 'Mesa', 'CPF', 'Cadastro', 'Situação', 'Encerrada em', 'Itens', 'Valor da conta', 'Pagamento', 'Primeiro pedido', 'Consumo'],
+        widths: [24, 8, 16, 21, 12, 21, 8, 16, 13, 21, 42],
         rows: clientRows
       },
       {
         name: 'Pedidos',
-        headers: ['Data', 'Hora', 'Cliente', 'Mesa', 'Produto', 'Quantidade', 'CPF', 'Situação da conta'],
-        widths: [12, 10, 24, 8, 30, 12, 16, 18],
+        headers: ['Data', 'Hora', 'Cliente', 'Mesa', 'Produto', 'Quantidade', 'Valor unitário', 'Valor total', 'CPF', 'Situação da conta'],
+        widths: [12, 10, 24, 8, 30, 12, 15, 14, 16, 18],
         rows: orderRows
       },
       {
         name: 'Produtos',
-        headers: ['Produto', 'Quantidade total', 'Nº de clientes', 'Clientes'],
-        widths: [30, 17, 15, 50],
+        headers: ['Produto', 'Quantidade total', 'Valor unitário', 'Valor total', 'Nº de clientes', 'Clientes'],
+        widths: [30, 17, 15, 15, 15, 50],
         rows: productRows
       }
     ];
