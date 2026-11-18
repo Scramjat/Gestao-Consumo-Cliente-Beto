@@ -681,10 +681,27 @@
   /** Todos os pedidos de todos os clientes, com quem pediu e quando. */
   function allOrders() {
     const orders = [];
-    Store.get().clients.forEach((c) => c.items.forEach((item) => item.orders.forEach((o) => {
-      orders.push({ at: o.at, qty: o.qty, product: item.product, client: c });
-    })));
+    Store.get().clients.forEach((c) => {
+      // Valor unitário de cada produto da conta (encerrada: o guardado no pagamento; aberta: a lista atual)
+      const lines = Store.billOf(c).lines;
+      c.items.forEach((item, i) => {
+        const unit = lines[i] ? lines[i].unitCents : null;
+        item.orders.forEach((o) => {
+          orders.push({
+            at: o.at, qty: o.qty, product: item.product, client: c,
+            cents: unit == null ? null : unit * o.qty
+          });
+        });
+      });
+    });
     return orders.sort((a, b) => a.at.localeCompare(b.at));
+  }
+
+  /** Valor de um pedido ou de um grupo: soma o que tem preço e avisa quando falta preço. */
+  function moneyCell(cents, missing = 0) {
+    if (cents == null) return '<span class="report__money is-missing">sem preço</span>';
+    const warn = missing ? ` <small class="report__money-warn">+ ${missing} sem preço</small>` : '';
+    return `<span class="report__money">${Billing.money(cents)}${warn}</span>`;
   }
 
   function clientTag(client) {
@@ -696,7 +713,9 @@
   function renderItemsReport() {
     const orders = allOrders();
     const total = orders.reduce((s, o) => s + o.qty, 0);
-    els.itemsDialogSub.textContent = `${Utils.plural(total, 'item', 'itens')} em ${Utils.plural(orders.length, 'pedido', 'pedidos')}`;
+    const money = orders.reduce((s, o) => s + (o.cents || 0), 0);
+    const anyPriced = orders.some((o) => o.cents != null);
+    els.itemsDialogSub.textContent = `${Utils.plural(total, 'item', 'itens')} em ${Utils.plural(orders.length, 'pedido', 'pedidos')}${anyPriced ? ` · ${Billing.money(money)}` : ''}`;
 
     if (!orders.length) {
       els.itemsReport.innerHTML = '<p class="item-empty">Nenhum item pedido ainda.</p>';
@@ -709,6 +728,7 @@
           <span class="report__time">${Utils.formatWhen(o.at)}</span>
           <span class="item__qty">${o.qty}</span>
           <span class="report__main"><strong>${Utils.escapeHTML(o.product)}</strong>${clientTag(o.client)}</span>
+          ${moneyCell(o.cents)}
         </li>`).join('')}</ul>`;
       return;
     }
@@ -717,8 +737,10 @@
     const groups = {};
     orders.forEach((o) => {
       const key = o.product.toLowerCase();
-      (groups[key] ||= { name: o.product, qty: 0, orders: [] });
+      (groups[key] ||= { name: o.product, qty: 0, cents: 0, priced: false, missing: 0, orders: [] });
       groups[key].qty += o.qty;
+      if (o.cents == null) groups[key].missing += 1;
+      else { groups[key].cents += o.cents; groups[key].priced = true; }
       groups[key].orders.push(o);
     });
     els.itemsReport.innerHTML = Object.values(groups)
@@ -729,12 +751,14 @@
             <span class="item__qty">${g.qty}</span>
             <strong>${Utils.escapeHTML(g.name)}</strong>
             <span class="report__count">${Utils.plural(g.orders.length, 'pedido', 'pedidos')}</span>
+            ${moneyCell(g.priced ? g.cents : null, g.priced ? g.missing : 0)}
           </summary>
           <ul class="report-list">${g.orders.map((o) => `
             <li class="report-row">
               <span class="report__time">${Utils.formatWhen(o.at)}</span>
               <span class="report__qty">${o.qty}×</span>
               <span class="report__main">${clientTag(o.client)}</span>
+              ${moneyCell(o.cents)}
             </li>`).join('')}</ul>
         </details>`).join('');
   }

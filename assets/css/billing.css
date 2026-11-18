@@ -224,3 +224,21 @@
   .pay__options { gap: 6px; }
   .bill-total strong { font-size: 24px; }
 }
+
+/* ---------- Janela "Itens pedidos": valores ---------- */
+.report__money {
+  margin-left: auto;
+  flex: none;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+.report-group summary .report__money { margin-left: 4px; font-size: 15px; }
+.report-row .report__money { font-size: 13.5px; }
+.report__money.is-missing { font-size: 12px; font-weight: 600; color: var(--warning); }
+.report__money-warn { display: block; font-size: 11px; font-weight: 600; color: var(--warning); }
+
+@media (max-width: 520px) {
+  .report-group summary .report__count { display: none; }
+}
