@@ -32,8 +32,9 @@ const DATA_FILE = path.join(DATA_DIR, 'dados.json');
 const MAX_BODY = 5 * 1024 * 1024;
 
 /* ---------- Login ---------- */
-const ADMIN_USER = process.env.ADMIN_USER || 'Admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+// Espaços e quebras de linha nas pontas são ignorados (o campo do Render aceita várias linhas)
+const ADMIN_USER = (process.env.ADMIN_USER || 'Admin').trim();
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
 const AUTH_ON = ADMIN_PASSWORD.length > 0;
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -213,7 +214,7 @@ async function handleLogin(req, res) {
 
   // As duas comparações sempre rodam, para não revelar qual campo errou
   const userOk = String(body.usuario || '').trim().toLowerCase() === ADMIN_USER.toLowerCase();
-  const passOk = safeEqual(body.senha || '', ADMIN_PASSWORD);
+  const passOk = safeEqual(String(body.senha || '').trim(), ADMIN_PASSWORD);
 
   if (!AUTH_ON || !userOk || !passOk) {
     registerFail(ip);
