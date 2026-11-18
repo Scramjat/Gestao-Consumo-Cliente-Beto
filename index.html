@@ -310,7 +310,10 @@
         </label>
         <label class="field">
           <span class="field__label">Senha</span>
-          <input id="loginPass" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false">
+          <div class="pass-wrap">
+            <input id="loginPass" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false">
+            <button type="button" class="pass-toggle" id="loginToggle" aria-label="Mostrar a senha digitada">Mostrar</button>
+          </div>
           <small class="field__error" id="loginError"></small>
         </label>
       </div>

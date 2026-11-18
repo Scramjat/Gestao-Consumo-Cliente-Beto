@@ -6,7 +6,7 @@
    Ao mudar arquivos do site, aumente o número da VERSAO.
    ========================================================= */
 
-const VERSAO = 'comanda-v3';
+const VERSAO = 'comanda-v4';
 
 const ARQUIVOS = [
   './',

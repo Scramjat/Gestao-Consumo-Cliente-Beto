@@ -489,6 +489,8 @@
   function openLogin() {
     if (els.loginDialog.open) return;
     els.loginPass.value = '';
+    els.loginPass.type = 'password';
+    $('#loginToggle').textContent = 'Mostrar';
     els.loginError.textContent = '';
     els.loginUser.value = Obsidian.user();
     UI.Modal.open(els.loginDialog);
@@ -905,6 +907,12 @@
     // Produtos e preços, login e sair
     $('#btnProducts').addEventListener('click', () => Products.open());
     els.loginForm.addEventListener('submit', submitLogin);
+    $('#loginToggle').addEventListener('click', (e) => {
+      const show = els.loginPass.type === 'password';
+      els.loginPass.type = show ? 'text' : 'password';
+      e.currentTarget.textContent = show ? 'Ocultar' : 'Mostrar';
+      els.loginPass.focus();
+    });
     els.loginDialog.addEventListener('cancel', (e) => e.preventDefault());   // sem senha, não fecha
     els.loginForm.addEventListener('input', () => { els.loginError.textContent = ''; });
     els.btnLogout.addEventListener('click', async () => {
