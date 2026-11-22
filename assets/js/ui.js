@@ -200,6 +200,7 @@ const UI = (() => {
             <h3 class="client-card__name" title="${esc(client.name)}">${esc(client.name)}</h3>
             <div class="client-card__meta">
               ${client.table ? `<span class="meta meta--table">${Icons.svg('table')} Mesa ${esc(client.table)}</span>` : ''}
+              ${Features.attendant && client.attendant ? `<span class="meta" title="Atendente">${Icons.svg('user')} ${esc(client.attendant)}</span>` : ''}
               <span class="meta">${Icons.svg('id')} ${client.cpf ? Utils.formatCPF(client.cpf) : 'Sem CPF'}</span>
               <span class="meta" title="Cadastrado em ${Utils.formatFull(client.createdAt)}">${Icons.svg('clock')} ${Utils.formatWhen(client.createdAt)} <em>· ${Utils.timeAgo(client.createdAt)}</em></span>
             </div>

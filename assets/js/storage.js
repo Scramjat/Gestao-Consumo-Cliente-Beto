@@ -34,6 +34,7 @@ const Store = (() => {
     delete s.seq;
     delete s.startedAt;
     s.version = 3;
+    s.clients.forEach((c) => { if (typeof c.attendant !== 'string') c.attendant = ''; });
     // Lista de produtos e preços (cadastrada pelo administrador)
     if (!Array.isArray(s.products)) s.products = [];
     s.clients.forEach((c) => c.items.forEach((item) => {
@@ -86,12 +87,13 @@ const Store = (() => {
       return () => listeners.delete(fn);
     },
 
-    addClient({ name, cpf, table }) {
+    addClient({ name, cpf, table, attendant }) {
       const client = {
         id: uid(),
         name: clean(name),
         cpf: Utils.onlyDigits(cpf),
         table: clean(table || ''),
+        attendant: clean(attendant || ''),   // pronto para o futuro (Features.attendant)
         createdAt: new Date().toISOString(),
         items: []
       };
@@ -100,12 +102,13 @@ const Store = (() => {
       return client;
     },
 
-    updateClient(id, { name, cpf, table }) {
+    updateClient(id, { name, cpf, table, attendant }) {
       const c = findClient(id);
       if (!c) return null;
       c.name = clean(name);
       c.cpf = Utils.onlyDigits(cpf);
       c.table = clean(table || '');
+      c.attendant = clean(attendant || '');
       commit({ type: 'client:update', clientId: id });
       return c;
     },

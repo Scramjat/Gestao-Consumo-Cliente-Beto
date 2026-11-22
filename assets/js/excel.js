@@ -132,6 +132,11 @@
       : [{ qty: item.qty, at: item.addedAt || client.createdAt }];
   }
 
+  // Coluna "Atendente": pronta, só aparece com Features.attendant = true
+  const attendantOn = () => typeof Features !== 'undefined' && Features.attendant;
+  const attendantCell = (client) => (attendantOn() ? [txt(client.attendant || '')] : []);
+  const insertAt = (list, index, value) => (attendantOn() ? [...list.slice(0, index), value, ...list.slice(index)] : list);
+
   function buildSheets(state) {
     const clients = state.clients.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
@@ -149,6 +154,7 @@
       return [
         txt(c.name, S.bold),
         tableCell(c),
+        ...attendantCell(c),
         txt(formatCPF(c.cpf)),
         when(c.createdAt, S.dateTime),
         situation(c),
@@ -174,6 +180,7 @@
         when(o.at, S.time),
         txt(o.client.name, S.bold),
         tableCell(o.client),
+        ...attendantCell(o.client),
         txt(o.product),
         num(o.qty),
         money(unit == null ? null : unit),
@@ -210,14 +217,14 @@
     return [
       {
         name: 'Clientes',
-        headers: ['Cliente', 'Mesa', 'CPF', 'Cadastro', 'Situação', 'Encerrada em', 'Itens', 'Valor da conta', 'Pagamento', 'Primeiro pedido', 'Consumo'],
-        widths: [24, 8, 16, 21, 12, 21, 8, 16, 13, 21, 42],
+        headers: insertAt(['Cliente', 'Mesa', 'CPF', 'Cadastro', 'Situação', 'Encerrada em', 'Itens', 'Valor da conta', 'Pagamento', 'Primeiro pedido', 'Consumo'], 2, 'Atendente'),
+        widths: insertAt([24, 8, 16, 21, 12, 21, 8, 16, 13, 21, 42], 2, 18),
         rows: clientRows
       },
       {
         name: 'Pedidos',
-        headers: ['Data', 'Hora', 'Cliente', 'Mesa', 'Produto', 'Quantidade', 'Valor unitário', 'Valor total', 'CPF', 'Situação da conta'],
-        widths: [12, 10, 24, 8, 30, 12, 15, 14, 16, 18],
+        headers: insertAt(['Data', 'Hora', 'Cliente', 'Mesa', 'Produto', 'Quantidade', 'Valor unitário', 'Valor total', 'CPF', 'Situação da conta'], 4, 'Atendente'),
+        widths: insertAt([12, 10, 24, 8, 30, 12, 15, 14, 16, 18], 4, 18),
         rows: orderRows
       },
       {

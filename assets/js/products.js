@@ -22,6 +22,9 @@ const Products = (() => {
 
   const priceText = (price) => price.toFixed(2).replace('.', ',');
 
+  // Só ADMIN e admin editam; o Usuário apenas consulta (o servidor também confere)
+  const editable = () => Roles.can(Api.role(), 'products.edit');
+
   function rowHtml(p) {
     if (p.id === editingId) {
       return `<li class="prod is-editing" data-id="${p.id}">
@@ -37,10 +40,10 @@ const Products = (() => {
     return `<li class="prod${p.id === flashId ? ' is-new' : ''}" data-id="${p.id}">
       <span class="prod__name">${esc(p.name)}</span>
       <span class="prod__price">${Billing.money(Billing.toCents(p.price))}</span>
-      <span class="prod__actions">
+      ${editable() ? `<span class="prod__actions">
         <button type="button" class="icon-btn icon-btn--sm" data-act="edit" aria-label="Editar ${esc(p.name)}" data-tip="Editar">${Icons.svg('edit')}</button>
         <button type="button" class="icon-btn icon-btn--sm icon-btn--danger" data-act="delete" aria-label="Excluir ${esc(p.name)}" data-tip="Excluir">${Icons.svg('trash')}</button>
-      </span>
+      </span>` : ''}
     </li>`;
   }
 
@@ -65,6 +68,7 @@ const Products = (() => {
 
   function addProduct(e) {
     e.preventDefault();
+    if (!editable()) return;
     const result = Store.addProduct({ name: nameInput.value, price: Billing.parsePrice(priceInput.value) });
     if (!result.ok) {
       setFormError(result.error);
@@ -81,6 +85,7 @@ const Products = (() => {
   }
 
   function saveEdit(row) {
+    if (!editable()) return;
     const id = row.dataset.id;
     const result = Store.updateProduct(id, {
       name: row.querySelector('.prod__input--name').value,
@@ -97,6 +102,7 @@ const Products = (() => {
   }
 
   async function removeProduct(row) {
+    if (!editable()) return;
     const product = Store.products().find((p) => p.id === row.dataset.id);
     if (!product) return;
     const ok = await UI.confirm({
@@ -162,6 +168,9 @@ const Products = (() => {
 
   return {
     open() {
+      const canEdit = editable();
+      form.hidden = !canEdit;
+      document.getElementById('productsTitle').textContent = canEdit ? 'Produtos e preços' : 'Preços dos produtos';
       editingId = null;
       formError.textContent = '';
       search.value = '';

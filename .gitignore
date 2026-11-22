@@ -7,3 +7,5 @@ server/erros.log
 # Arquivos temporários
 *.tmp
 .claude/
+
+node_modules/

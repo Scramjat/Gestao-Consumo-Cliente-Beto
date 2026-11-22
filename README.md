@@ -3,23 +3,69 @@
 Sistema simples para anotar o que cada cliente consumiu. Cada produto tem um preço cadastrado pelo administrador, e ao encerrar a conta o sistema mostra o valor de cada produto, o total a pagar e a forma de pagamento.
 
 Funciona de três jeitos:
-- **Na internet (Render)**: o banco de dados roda no servidor, com login de administrador. É o modo recomendado para usar no tablet ou celular. Veja **Usar pela internet (Render)**.
-- **No tablet ou celular, sem servidor** (GitHub Pages): os dados ficam guardados só no próprio aparelho.
-- **No computador** (com o servidor local): os dados também são gravados no Obsidian.
+- **Na internet (Render + Neon)**: o servidor roda no Render e os dados ficam num banco Postgres permanente (Neon), com login. É o modo recomendado para vários atendentes, no tablet ou celular.
+- **No tablet ou celular, sem servidor** (GitHub Pages): os dados ficam guardados só no próprio aparelho, sem login.
+- **No computador** (com o servidor local): os dados ficam em arquivos e também viram notas do Obsidian. Também pede login.
 
-## Usar pela internet (Render)
+## Contas e permissões
 
-O endereço do site pede **usuário e senha** (o administrador). O usuário é `Admin`; a senha é a que foi definida em `ADMIN_PASSWORD` ao criar o serviço no Render (ela não fica no código). A sessão dura 30 dias em cada aparelho; o botão **Sair** (no topo) encerra a sessão.
+Existem **3 contas fixas** (não há cadastro de usuários). O login diferencia maiúsculas de minúsculas: `ADMIN` e `admin` são contas diferentes.
 
-**Publicar no Render**
-1. No Render: **New + → Blueprint** e escolha o repositório `Gestao-Consumo-Cliente-Beto`. O Render lê o arquivo `render.yaml`.
-2. Quando perguntar `ADMIN_PASSWORD`, digite a senha do administrador (de preferência uma senha forte: o usuário é `Admin` e o repositório é público).
-3. **Apply** / **Deploy Blueprint**. Em alguns minutos o site fica no ar em `https://gestao-consumo-cliente-beto.onrender.com` (o endereço exato aparece no painel).
+| Login | Quem usa | Função |
+|---|---|---|
+| `ADMIN` | o dono do sistema | Super administrador |
+| `admin` | o responsável do cliente | Administrador |
+| `user` | **todos os atendentes** (uma conta só) | Usuário |
 
-**Importante sobre o plano gratuito do Render**
-- O serviço **dorme após 15 minutos sem uso**. O primeiro acesso depois disso leva cerca de 1 minuto para acordar. A faixa vermelha "Sem conexão com o servidor" pode aparecer nesse tempo: aguarde, nada se perde.
-- O disco do servidor é **apagado** quando ele reinicia ou recebe uma versão nova. Por isso o aparelho guarda uma cópia dos dados e **devolve tudo ao servidor sozinho** assim que ele volta. Mesmo assim, **faça backup com frequência** (botão de baixar → **Fazer backup**).
-- Para o banco ficar guardado de forma definitiva no servidor, o Render tem planos pagos com **disco persistente**.
+A senha de todas começa como **`beto`**. Assim que o sistema subir, troque as senhas no painel **Acessos** (botão de chave, no topo): uma faixa amarela avisa enquanto houver conta com a senha padrão.
+
+| O que | ADMIN | admin | user |
+|---|---|---|---|
+| Cadastrar clientes, lançar pedidos | ✅ | ✅ | ✅ |
+| Encerrar conta e **reabrir** conta encerrada | ✅ | ✅ | ✅ |
+| Ver métricas e faturamento | ✅ | ✅ | ✅ |
+| Gerar a planilha do Excel | ✅ | ✅ | ✅ |
+| Cadastrar e editar produtos e preços | ✅ | ✅ | só consulta |
+| Fazer e restaurar backup | ✅ | ✅ | ❌ |
+| Painel **Acessos** (ver e trocar senhas) | ✅ as 3 contas | ✅ a dele e a do `user` | ❌ |
+| Trocar a própria senha | ✅ | ✅ | ❌ |
+
+- Quem vê a senha de uma conta também pode trocá-la. A senha só aparece ao clicar em **Mostrar** e se esconde sozinha depois de 20 segundos.
+- Trocar a senha de uma conta **desconecta todos os aparelhos** que usavam ela (útil quando um atendente sai: troque a senha do `user`).
+- As regras ficam em `assets/js/roles.js` e **o servidor confere tudo** (esconder um botão na tela não é a proteção).
+- As senhas ficam guardadas de duas formas: um código embaralhado (hash) para o login e uma cópia cifrada (AES-256) com `ENCRYPTION_KEY` para o painel poder mostrá-las. Quem lê só o banco não vê as senhas.
+
+## Usar pela internet (Render + Neon)
+
+O site pede usuário e senha. A sessão dura 30 dias em cada aparelho; **Sair** (no topo) encerra.
+
+**1. Banco permanente (Neon, plano gratuito)**
+1. Crie uma conta em neon.com e um projeto (região mais próxima, ex.: São Paulo ou Virgínia).
+2. Copie o **connection string** (começa com `postgresql://`).
+3. No Render: serviço → **Environment** → adicione `DATABASE_URL` com esse endereço → **Save**. O servidor reinicia e cria as tabelas sozinho.
+4. No painel **Acessos** a faixa amarela "banco permanente não conectado" some quando der certo.
+
+Limites do plano gratuito do Neon (conferir na hora): 1 GB e 100 horas de computação por mês; a computação dorme após 5 minutos sem uso; **não tem backup agendado** (só voltar no tempo em até 6 horas). Por isso o sistema guarda uma **cópia diária dentro do próprio banco (últimos 30 dias)**, e há o botão de baixar backup.
+
+**2. Publicar no Render**
+1. No Render: **New + → Blueprint** e escolha o repositório. O Render lê o `render.yaml`.
+2. Preencha o `DATABASE_URL` (ou deixe para depois) e **Deploy Blueprint**.
+
+**Plano gratuito do Render:** o serviço dorme após 15 minutos sem uso e o primeiro acesso leva cerca de 1 minuto. Sem `DATABASE_URL`, o disco é apagado a cada reinício.
+
+**Antes de usar com vários atendentes ao mesmo tempo:** hoje cada aparelho envia o documento inteiro ao servidor, então dois atendentes lançando no mesmo instante podem sobrescrever um ao outro. A próxima etapa do plano (servidor como fonte única, por ação) resolve isso.
+
+## Campo "Atendente" (pronto, desligado)
+
+Cada ficha de cliente já tem o campo `attendant` nos dados (vazio). Para ligar a tela, em `assets/js/features.js` troque `attendant: false` por `true`: o campo aparece no cadastro, no cartão, na busca e na planilha do Excel (e nas notas do Obsidian, quando preenchido).
+
+## Testes
+
+```
+npm install
+npm test
+```
+Sobe um servidor de verdade e confere o login, as permissões das 3 contas, o painel de senhas, a troca de senha, o bloqueio de tentativas e a camada Postgres (simulada em memória).
 
 ## Produtos e preços
 
@@ -62,7 +108,7 @@ Ao mudar arquivos do site, aumente a `VERSAO` em `sw.js` para os aparelhos receb
 
 Clique no atalho **Comanda** da Área de Trabalho, ou acesse **http://localhost:3210** no navegador (vale salvar nos favoritos).
 
-O servidor liga sozinho, sem janela, quando o Windows inicia. Não é preciso abrir nem conectar nada.
+O servidor liga sozinho, sem janela, quando o Windows inicia. Entre com um dos 3 logins (`ADMIN`, `admin` ou `user`, senha padrão `beto`).
 
 > Não abra o `index.html` com dois cliques. Assim a página não grava no banco, e uma faixa vermelha avisa.
 
@@ -128,7 +174,11 @@ index.html              página
 manifest.webmanifest    nome, ícone e cores do app instalado
 sw.js                   faz o app abrir sem internet
 server/
-  server.js             servidor: entrega o site, login do administrador e grava os dados
+  server.js             servidor: rotas, entrega o site
+  auth.js               senhas (hash e cifra), sessão e limite de tentativas
+  accounts.js           as 3 contas: login, painel de senhas
+  storage.js            onde os dados ficam: Postgres (Neon) ou arquivos
+tests/                  testes automáticos (npm test)
   iniciar.vbs           liga o servidor sem janela (usado pelos atalhos)
 assets/
   css/
@@ -136,6 +186,7 @@ assets/
     index.css           layout e componentes
     metrics.css         painel de métricas
     billing.css         valores, pagamento, produtos e login
+    access.css          painel de acessos e faixa de aviso
     animations.css      animações
   js/
     theme.js            tema (sempre abre no claro; o botão troca só durante o uso)
@@ -147,7 +198,10 @@ assets/
     markdown.js         notas do Obsidian (usado pelo site e pelo servidor)
     excel.js            planilha do Excel (.xlsx) do botão de baixar
     metrics.js          painel de métricas (cálculos e gráficos)
-    obsidian.js         conexão com o banco e login (servidor → cofre)
+    api.js              conexão com o servidor, login e painel de acessos
+    roles.js            contas e permissões (usado pelo site e pelo servidor)
+    features.js         recursos prontos e desligados (campo Atendente)
+    accounts.js         painel "Acessos e senhas"
     ui.js               modais, avisos e desenho dos cards
     app.js              liga a interface aos dados
   img/

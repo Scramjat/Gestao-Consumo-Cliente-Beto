@@ -135,6 +135,7 @@
     open.forEach((c) => {
       lines.push(`## ${c.name}`);
       lines.push(`- **Mesa:** ${c.table || '—'}`);
+      if (c.attendant) lines.push(`- **Atendente:** ${c.attendant}`);
       lines.push(`- **CPF:** ${formatCPF(c.cpf)}`);
       lines.push(`- **Cadastro:** ${dateTime(c.createdAt)}`);
       lines.push('- **Consumo:**');

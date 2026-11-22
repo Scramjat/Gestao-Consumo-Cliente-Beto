@@ -1,26 +1,24 @@
 /* =========================================================
-   Banco de dados (servidor) e login
-   O servidor (server/server.js) guarda tudo e grava as notas do
-   Obsidian no cofre:
-     Comanda/dados.json            -> todos os dados (o site lê daqui)
-     Comanda/Contas abertas.md     -> quem está com a conta aberta agora
-     Comanda/Dias/AAAA-MM-DD.md    -> cada pedido do dia, com o horário
-     Comanda/backup/               -> cópia dos dados de cada dia
+   Conexão com o servidor: dados, login e painel de acessos
+   O servidor (server/server.js) guarda os dados (no Neon ou em
+   arquivos) e confere o login das três contas.
 
    Estados: local (sem servidor, dados só no aparelho), connecting,
    connected, saving, offline (servidor fora do ar ou dormindo) e
-   login (o servidor pede senha). Se o servidor cair, os dados ficam
-   guardados no aparelho e são enviados quando ele voltar.
+   login (o servidor pede usuário e senha). Se o servidor cair, os
+   dados ficam guardados no aparelho e são enviados quando ele voltar.
    ========================================================= */
 
-const Obsidian = (() => {
-  const API = '/api/estado';
+const Api = (() => {
+  const STATE_URL = '/api/estado';
   const HEALTH = '/api/saude';
   const LOGIN = '/api/login';
+  const ACCOUNTS_URL = '/api/contas';
   const HEARTBEAT_MS = 5000;
   const MODE_KEY = 'comanda:modo';
   const TOKEN_KEY = 'comanda:token';
   const USER_KEY = 'comanda:usuario';
+  const ROLE_KEY = 'comanda:funcao';
 
   const listeners = new Set();
   const reconnectHandlers = new Set();
@@ -32,9 +30,8 @@ const Obsidian = (() => {
   let local = location.protocol === 'file:' || read(MODE_KEY) === 'local';
   let status = local ? 'local' : 'connecting';
   let authRequired = false;
-  let vault = '';
-  let folderPath = '';
-  let pendingState = null;  // alterações ainda não gravadas
+  let database = '';          // 'postgres' (Neon) ou 'arquivo'
+  let pendingState = null;    // alterações ainda não gravadas
   let saveTimer = null;
   let queue = Promise.resolve();
   let checking = false;
@@ -42,7 +39,7 @@ const Obsidian = (() => {
   function setStatus(next) {
     if (next === status) return;
     status = next;
-    listeners.forEach((fn) => fn(status, { vault, path: folderPath }));
+    listeners.forEach((fn) => fn(status));
   }
 
   function becomeLocal() {
@@ -57,7 +54,7 @@ const Obsidian = (() => {
     return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
   }
 
-  /** O servidor recusou a sessão (venceu ou nunca existiu): pede login de novo. */
+  /** O servidor recusou a sessão (venceu, a senha foi trocada ou nunca existiu): pede login de novo. */
   function expireSession() {
     drop(TOKEN_KEY);
     setStatus('login');
@@ -73,9 +70,8 @@ const Obsidian = (() => {
       if (!res.ok) return { kind: 'down' };
       const info = await res.json().catch(() => null);
       if (!info || !info.ok) return { kind: 'none' };
-      vault = info.cofre || '';
-      folderPath = info.pasta || '';
       authRequired = !!info.auth;
+      database = info.banco || '';
       return { kind: 'ok' };
     } catch {
       return { kind: 'down' };
@@ -87,7 +83,7 @@ const Obsidian = (() => {
   /** Lê os dados do servidor. ok:false quando precisa de login ou o servidor não respondeu. */
   async function fetchRemote() {
     try {
-      const res = await fetch(API, { cache: 'no-store', headers: headers() });
+      const res = await fetch(STATE_URL, { cache: 'no-store', headers: headers() });
       if (res.status === 401) { expireSession(); return { ok: false }; }
       if (!res.ok) throw new Error(res.status);
       const { estado } = await res.json();
@@ -106,7 +102,7 @@ const Obsidian = (() => {
     queue = queue.then(async () => {
       setStatus('saving');
       try {
-        const res = await fetch(API, { method: 'PUT', headers: headers({ 'Content-Type': 'application/json' }), body });
+        const res = await fetch(STATE_URL, { method: 'PUT', headers: headers({ 'Content-Type': 'application/json' }), body });
         if (res.status === 401) {
           if (!pendingState) pendingState = state;
           expireSession();
@@ -146,20 +142,43 @@ const Obsidian = (() => {
     }
   }
 
+  /** Chamada autenticada para o painel de acessos. Lança Error com a mensagem do servidor. */
+  async function authed(method, url, body) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        cache: 'no-store',
+        headers: headers(body ? { 'Content-Type': 'application/json' } : {}),
+        body: body ? JSON.stringify(body) : undefined
+      });
+    } catch {
+      throw new Error('Não consegui falar com o servidor. Confira a internet.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) { expireSession(); throw new Error('Sua sessão terminou. Entre de novo.'); }
+    if (!res.ok) throw new Error(data.erro || 'Não foi possível concluir.');
+    return data;
+  }
+
   return {
     status: () => status,
-    vaultName: () => vault,
-    folderPath: () => folderPath,
     isConnected: () => status === 'connected' || status === 'saving',
     isLocal: () => local,
     isAuthRequired: () => authRequired,
     hasSession: () => !!read(TOKEN_KEY),
-    user: () => read(USER_KEY) || '',
     hasPending: () => !!pendingState,
+    /** 'postgres' (Neon, permanente) ou 'arquivo' (some quando o Render reinicia). */
+    database: () => database,
+
+    /** Login da conta que está usando (ex.: "admin"). */
+    user: () => read(USER_KEY) || '',
+    /** Função: 'super' (ADMIN), 'admin' ou 'user'. Sem servidor (modo local) o aparelho é o dono: 'super'. */
+    role: () => (local ? 'super' : read(ROLE_KEY) || 'user'),
 
     onStatus(fn) {
       listeners.add(fn);
-      fn(status, { vault, path: folderPath });
+      fn(status);
     },
 
     /** Chamado quando o servidor volta depois de ter ficado fora do ar (recebe os dados dele). */
@@ -194,7 +213,8 @@ const Obsidian = (() => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.erro || 'Não foi possível entrar.');
       write(TOKEN_KEY, data.token);
-      write(USER_KEY, data.usuario || usuario);
+      write(USER_KEY, data.login || usuario);
+      write(ROLE_KEY, data.funcao || 'user');
       const r = await fetchRemote();
       setStatus('connected');
       return r.ok ? r.estado : null;
@@ -204,6 +224,23 @@ const Obsidian = (() => {
       drop(TOKEN_KEY);
       pendingState = null;
       setStatus('login');
+    },
+
+    /* ---------- Painel de acessos (ADMIN e admin) ---------- */
+
+    /** As contas que esta função pode ver: { eu, contas: [{login, rotulo, ultimoAcesso, senhaPadrao}], banco }. */
+    accounts: () => authed('GET', ACCOUNTS_URL),
+
+    /** A senha de uma conta (null quando não dá para mostrar). Só com permissão. */
+    async revealPassword(login) {
+      return (await authed('POST', `${ACCOUNTS_URL}/senha-ver`, { login })).senha;
+    },
+
+    /** Troca a senha de uma conta. Se for a de quem está logado, a sessão é renovada. */
+    async changePassword(login, senha) {
+      const data = await authed('PUT', `${ACCOUNTS_URL}/senha`, { login, senha });
+      if (data.token) write(TOKEN_KEY, data.token);
+      return data.conta;
     },
 
     /** Agenda a gravação (agrupa várias alterações seguidas). */
@@ -226,7 +263,7 @@ const Obsidian = (() => {
     flushOnExit() {
       if (local || !pendingState || status === 'login') return;
       clearTimeout(saveTimer);
-      fetch(API, {
+      fetch(STATE_URL, {
         method: 'POST',
         headers: headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ estado: pendingState }),

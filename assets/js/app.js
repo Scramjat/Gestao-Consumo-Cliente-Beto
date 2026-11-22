@@ -42,6 +42,8 @@
     clientName: $('#clientName'),
     clientCpf: $('#clientCpf'),
     clientTable: $('#clientTable'),
+    attendantField: $('#attendantField'),
+    clientAttendant: $('#clientAttendant'),
     nameError: $('#nameError'),
     cpfError: $('#cpfError'),
 
@@ -62,6 +64,9 @@
     loginError: $('#loginError'),
     loginSubmit: $('#loginSubmit'),
     btnLogout: $('#btnLogout'),
+    btnAccess: $('#btnAccess'),
+    passBanner: $('#passBanner'),
+    passBannerText: $('#passBannerText'),
 
     closeDialog: $('#closeDialog'),
     closeForm: $('#closeForm'),
@@ -97,6 +102,7 @@
         return Utils.normalize(c.name).includes(q)
           // Mesa: número exato, para "5" não trazer a mesa 15
           || (c.table && Utils.normalize(c.table) === qTable)
+          || (Features.attendant && c.attendant && Utils.normalize(c.attendant).includes(q))
           // CPF: a partir de 3 números, para não confundir com o número da mesa
           || (qDigits.length >= 3 && c.cpf.includes(qDigits));
       });
@@ -163,6 +169,8 @@
     els.clientName.value = client ? client.name : '';
     els.clientCpf.value = client?.cpf ? Utils.formatCPF(client.cpf) : '';
     els.clientTable.value = client?.table || '';
+    els.attendantField.hidden = !Features.attendant;
+    els.clientAttendant.value = client?.attendant || '';
     setFieldError(els.clientName, els.nameError, '');
     setFieldError(els.clientCpf, els.cpfError, '');
     UI.Modal.open(els.clientDialog);
@@ -193,7 +201,7 @@
     setFieldError(els.clientCpf, els.cpfError, cpfMsg);
     if (cpfMsg) ok = false;
 
-    return ok ? { name, cpf, table: els.clientTable.value.trim() } : null;
+    return ok ? { name, cpf, table: els.clientTable.value.trim(), attendant: els.clientAttendant.value.trim() } : null;
   }
 
   function saveClient(e) {
@@ -467,7 +475,7 @@
   }
 
   /* =====================================================
-     Obsidian
+     Api
      ===================================================== */
   // Faixa de aviso: só aparece se algo der errado; com o servidor ligado, nada é mostrado
   const bannerTexts = {
@@ -482,7 +490,44 @@
     // Sem login, o conteúdo fica escondido atrás da janela de entrada
     document.body.classList.toggle('is-locked', status === 'login');
     if (status === 'login') openLogin();
-    els.btnLogout.hidden = !(Obsidian.isAuthRequired() && Obsidian.hasSession() && status !== 'login');
+    els.btnLogout.hidden = !(Api.isAuthRequired() && Api.hasSession() && status !== 'login');
+    els.btnLogout.dataset.tip = `Sair (${Api.user()})`;
+    if (status === 'connected' || status === 'local') applyRole();
+  }
+
+  /**
+   * Esconde da tela o que a função não pode usar. É só conforto: quem confere
+   * de verdade é o servidor (server/server.js), com as mesmas regras de roles.js.
+   */
+  function applyRole() {
+    const role = Api.role();
+    els.btnAccess.hidden = Api.isLocal() || !Roles.can(role, 'accounts.panel');
+    document.querySelectorAll('[data-menu="backup"], [data-menu="restore"]')
+      .forEach((item) => { item.hidden = !Roles.can(role, 'backup'); });
+    checkAlerts();
+  }
+
+  /** Faixa amarela para ADMIN e admin: senha padrão ainda em uso e banco que não é permanente. */
+  async function checkAlerts() {
+    if (Api.isLocal() || !Roles.can(Api.role(), 'accounts.panel') || !Api.hasSession()) {
+      els.passBanner.hidden = true;
+      return;
+    }
+    try {
+      const { contas, banco } = await Api.accounts();
+      const messages = [];
+      const defaults = contas.filter((c) => c.senhaPadrao).map((c) => c.login);
+      if (defaults.length) {
+        messages.push(`A senha padrão (${Roles.SENHA_PADRAO}) ainda está em uso em: ${defaults.join(', ')}. Troque agora.`);
+      }
+      if (banco === 'arquivo' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+        messages.push('O banco permanente (Neon) não está conectado: os dados somem quando o servidor reinicia.');
+      }
+      els.passBanner.hidden = !messages.length;
+      els.passBannerText.textContent = messages.join(' ');
+    } catch {
+      els.passBanner.hidden = true;
+    }
   }
 
   /* ---------- Login ---------- */
@@ -492,7 +537,7 @@
     els.loginPass.type = 'password';
     $('#loginToggle').textContent = 'Mostrar';
     els.loginError.textContent = '';
-    els.loginUser.value = Obsidian.user();
+    els.loginUser.value = Api.user();
     UI.Modal.open(els.loginDialog);
     (els.loginUser.value ? els.loginPass : els.loginUser).focus();
   }
@@ -509,10 +554,11 @@
     els.loginSubmit.disabled = true;
     els.loginSubmit.textContent = 'Entrando…';
     try {
-      const remote = await Obsidian.login(usuario, senha);
+      const remote = await Api.login(usuario, senha);
       els.loginPass.value = '';
       UI.Modal.close(els.loginDialog);
       syncWithVault(remote, true);
+      applyRole();
     } catch (err) {
       els.loginError.textContent = err.message;
       UI.shake(els.loginForm.querySelector('.modal__body'));
@@ -543,7 +589,7 @@
       Store.replace(remote);
       if (!silent) UI.toast(`Dados carregados do servidor (${Utils.plural(remote.clients.length, 'cliente', 'clientes')})`, { type: 'success' });
     } else if (!local.pristine) {
-      Obsidian.saveNow(local);
+      Api.saveNow(local);
     }
   }
 
@@ -930,6 +976,9 @@
 
     // Produtos e preços, login e sair
     $('#btnProducts').addEventListener('click', () => Products.open());
+    els.btnAccess.addEventListener('click', () => Accounts.open());
+    $('#passBannerBtn').addEventListener('click', () => Accounts.open());
+    Accounts.onChange(checkAlerts);
     els.loginForm.addEventListener('submit', submitLogin);
     $('#loginToggle').addEventListener('click', (e) => {
       const show = els.loginPass.type === 'password';
@@ -947,7 +996,7 @@
         tone: 'primary',
         icon: 'unlink'
       });
-      if (ok) Obsidian.logout();
+      if (ok) Api.logout();
     });
 
     // Métricas
@@ -1006,11 +1055,11 @@
     render(reason);
     if (els.itemsDialog.open) renderItemsReport();
     if (els.metricsDialog.open) renderMetrics();
-    if (reason.type !== 'replace') Obsidian.scheduleSave(state);
+    if (reason.type !== 'replace') Api.scheduleSave(state);
   });
 
-  Obsidian.onStatus(onStatusChange);
-  Obsidian.onReconnect((remote) => syncWithVault(remote, true));
+  Api.onStatus(onStatusChange);
+  Api.onReconnect((remote) => syncWithVault(remote, true));
 
   bindEvents();
   render();
@@ -1020,9 +1069,9 @@
   // (as métricas têm o próprio temporizador, de 1 minuto)
   setInterval(() => render(), 30000);
 
-  Obsidian.init().then((remote) => {
+  Api.init().then((remote) => {
     // Banco vazio na primeira vez: syncWithVault grava o que já existir no navegador
-    if (Obsidian.isConnected()) syncWithVault(remote, true);
+    if (Api.isConnected()) syncWithVault(remote, true);
   });
 
   // Pede ao navegador para não apagar os dados sozinho (importante no tablet)
@@ -1034,8 +1083,8 @@
   }
 
   // Garante o envio da última alteração ao fechar a aba
-  window.addEventListener('pagehide', () => Obsidian.flushOnExit());
+  window.addEventListener('pagehide', () => Api.flushOnExit());
   window.addEventListener('beforeunload', (e) => {
-    if (Obsidian.hasPending()) { Obsidian.flushOnExit(); e.preventDefault(); }
+    if (Api.hasPending()) { Api.flushOnExit(); e.preventDefault(); }
   });
 })();

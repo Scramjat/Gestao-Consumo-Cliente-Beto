@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="assets/css/index.css">
   <link rel="stylesheet" href="assets/css/metrics.css">
   <link rel="stylesheet" href="assets/css/billing.css">
+  <link rel="stylesheet" href="assets/css/access.css">
   <link rel="stylesheet" href="assets/css/animations.css">
 
   <!-- Carregado no <head> para aplicar o tema antes da página aparecer (evita "piscar") -->
@@ -70,6 +71,10 @@
           <input type="file" id="restoreInput" accept=".json,application/json" hidden>
         </div>
 
+        <button class="icon-btn" id="btnAccess" data-tip="Acessos e senhas" aria-label="Acessos e senhas" hidden>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M17 6l3 3M14 9l2 2"/></svg>
+        </button>
+
         <button class="icon-btn" id="btnLogout" data-tip="Sair" aria-label="Sair" hidden>
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
@@ -80,10 +85,15 @@
         </button>
       </nav>
     </div>
-    <!-- Aviso quando o banco (Obsidian) não está conectado -->
+    <!-- Aviso quando o servidor não responde -->
     <div class="db-banner" id="dbBanner" role="alert" hidden>
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
       <span id="dbBannerText"></span>
+    </div>
+    <div class="db-banner db-banner--warn" id="passBanner" role="status" hidden>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span id="passBannerText"></span>
+      <button type="button" class="db-banner__btn" id="passBannerBtn">Abrir Acessos</button>
     </div>
   </header>
 
@@ -185,6 +195,12 @@
         <label class="field">
           <span class="field__label">Número da mesa <span class="field__hint">(opcional)</span></span>
           <input id="clientTable" name="table" type="text" maxlength="10" autocomplete="off" placeholder="Ex.: 5">
+        </label>
+
+        <!-- Pronto, mas desligado: para ligar, Features.attendant = true em assets/js/features.js -->
+        <label class="field" id="attendantField" hidden>
+          <span class="field__label">Atendente <span class="field__hint">(opcional)</span></span>
+          <input id="clientAttendant" name="attendant" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: João">
         </label>
 
         <label class="field">
@@ -306,7 +322,7 @@
         <p class="login__sub">Acesso do administrador</p>
         <label class="field">
           <span class="field__label">Usuário</span>
-          <input id="loginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false">
+          <input id="loginUser" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
         </label>
         <label class="field">
           <span class="field__label">Senha</span>
@@ -391,6 +407,26 @@
     </div>
   </dialog>
 
+  <!-- ===== Modal: acessos e senhas (painel de controle) ===== -->
+  <dialog class="modal modal--lg" id="accessDialog" aria-labelledby="accessTitle">
+    <div class="modal__card">
+      <header class="modal__head">
+        <div>
+          <h2 id="accessTitle">Acessos e senhas</h2>
+          <p class="modal__sub" id="accessSub"></p>
+        </div>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <p class="bill-warning" id="accessWarn" hidden></p>
+        <ul class="acc-list" id="accessList"></ul>
+        <p class="acc-note">A senha só aparece quando você clica em <strong>Mostrar</strong> e some sozinha depois de alguns segundos. Trocar a senha de uma conta desconecta todos os aparelhos que estavam usando ela.</p>
+      </div>
+    </div>
+  </dialog>
+
   <!-- ===== Modal: confirmação ===== -->
   <dialog class="modal modal--sm" id="confirmDialog" aria-labelledby="confirmTitle">
     <div class="modal__card">
@@ -409,6 +445,8 @@
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
   <!-- ===== Scripts (ordem importa) ===== -->
+  <script src="assets/js/roles.js"></script>
+  <script src="assets/js/features.js"></script>
   <script src="assets/js/utils.js"></script>
   <script src="assets/js/icons.js"></script>
   <script src="assets/js/billing.js"></script>
@@ -416,9 +454,10 @@
   <script src="assets/js/markdown.js"></script>
   <script src="assets/js/excel.js"></script>
   <script src="assets/js/metrics.js"></script>
-  <script src="assets/js/obsidian.js"></script>
+  <script src="assets/js/api.js"></script>
   <script src="assets/js/ui.js"></script>
   <script src="assets/js/products.js"></script>
+  <script src="assets/js/accounts.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

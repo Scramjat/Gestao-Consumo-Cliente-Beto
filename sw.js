@@ -6,7 +6,7 @@
    Ao mudar arquivos do site, aumente o número da VERSAO.
    ========================================================= */
 
-const VERSAO = 'comanda-v5';
+const VERSAO = 'comanda-v6';
 
 const ARQUIVOS = [
   './',
@@ -16,8 +16,11 @@ const ARQUIVOS = [
   'assets/css/index.css',
   'assets/css/metrics.css',
   'assets/css/billing.css',
+  'assets/css/access.css',
   'assets/css/animations.css',
   'assets/js/theme.js',
+  'assets/js/roles.js',
+  'assets/js/features.js',
   'assets/js/utils.js',
   'assets/js/icons.js',
   'assets/js/billing.js',
@@ -25,9 +28,10 @@ const ARQUIVOS = [
   'assets/js/markdown.js',
   'assets/js/excel.js',
   'assets/js/metrics.js',
-  'assets/js/obsidian.js',
+  'assets/js/api.js',
   'assets/js/ui.js',
   'assets/js/products.js',
+  'assets/js/accounts.js',
   'assets/js/app.js',
   'assets/img/favicon.svg',
   'assets/img/icon-180.png',
