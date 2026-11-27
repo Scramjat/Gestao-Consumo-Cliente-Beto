@@ -151,7 +151,9 @@ const Metrics = (() => {
       orders, totalItems, clients, products, hours, peakHour, byDay, weekdays, tables,
       closed, avgStay, avgFirstWait, open, lastHourItems,
       paid, revenueCents, avgTicketCents, methods,
-      waiters: WaiterStats.compute(state, start)
+      waiters: WaiterStats.compute(state, start),
+      cancels: WaiterStats.since(state.cancels, start),
+      reopens: WaiterStats.since(state.reopens, start)
     };
   }
 
@@ -225,7 +227,7 @@ const Metrics = (() => {
     const m = compute(state, periodKey);
     const period = PERIODS[periodKey];
 
-    if (!m.orders.length && !m.closed.length) {
+    if (!m.orders.length && !m.closed.length && !m.cancels.length && !m.reopens.length) {
       container.innerHTML = `<div class="mx-empty mx-empty--big">
         <strong>Nenhum pedido em "${period.label.toLowerCase()}".</strong>
         <span>Escolha outro período ou lance alguns pedidos.</span>
@@ -255,7 +257,7 @@ const Metrics = (() => {
       kpi('Última hora', fmtNum(m.lastHourItems), 'itens nos últimos 60 min')
     ].join('');
 
-    const sections = [waiterTable(m)];
+    const sections = [waiterTable(m), reopenTable(m, state), cancelTable(m, state)];
 
     const byRevenue = m.waiters.filter((w) => w.paidTabs);
     if (byRevenue.length) {
@@ -361,6 +363,63 @@ const Metrics = (() => {
         <thead><tr><th>Garçom</th><th class="num">Mesas pagas</th><th class="num">Faturamento</th><th class="num">Ticket médio</th><th class="num">Abertas agora</th><th class="num">Itens lançados</th><th class="num">Valor lançado</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`, true);
+  }
+
+  /* ---------- Conferência: reaberturas e cancelamentos ---------- */
+  const MAX_AUDIT_ROWS = 200;
+  const CHOSEN_NAME = 'O nome é o escolhido no aparelho (os garçons não têm senha própria).';
+
+  const nameOf = (state, id) => state.employees.find((e) => e.id === id)?.name || '—';
+
+  const tabCells = (e) => `<td><strong>${esc(e.name || '—')}</strong>${e.removed ? ' <span class="tag">excluída</span>' : ''}</td>
+        <td>${esc(e.table || '—')}</td>`;
+
+  /** Os mais recentes primeiro; a lista completa vai na planilha. */
+  function auditCard(title, sub, empty, entries, headers, row) {
+    if (!entries.length) return card(title, sub, `<p class="mx-empty">${empty}</p>`, true);
+    const shown = entries.slice().reverse().slice(0, MAX_AUDIT_ROWS);
+    const more = entries.length > shown.length
+      ? `<p class="mx-empty">Mostrando os ${fmtNum(shown.length)} mais recentes de ${fmtNum(entries.length)}. A planilha traz todos.</p>`
+      : '';
+    return card(title, sub, `<div class="mx-table-wrap"><table class="mx-table">
+        <thead><tr>${headers}</tr></thead>
+        <tbody>${shown.map(row).join('')}</tbody>
+      </table></div>${more}`, true);
+  }
+
+  function reopenTable(m, state) {
+    const lowered = m.reopens.filter((e) => WaiterStats.reopenResult(e).lowered).length;
+    const alert = lowered ? ` Para conferir (valor menor que o já pago, ou comanda excluída): ${fmtNum(lowered)}.` : '';
+    const paid = (cents, method) => (cents == null ? '—' : `${Billing.money(cents)} <small>${esc(Billing.methodLabel(method))}</small>`);
+    return auditCard('Comandas reabertas', `${CHOSEN_NAME}${alert}`, 'Nenhuma comanda foi reaberta no período.',
+      m.reopens,
+      '<th>Quando</th><th>Reaberta por</th><th>Cliente</th><th>Mesa</th><th class="num">Pago antes</th><th class="num">Encerrada depois</th><th>Resultado</th>',
+      (e) => {
+        const result = WaiterStats.reopenResult(e);
+        return `<tr${result.lowered ? ' class="is-alert"' : ''}>
+        <td>${Utils.formatWhen(e.at)}</td>
+        <td>${esc(nameOf(state, e.waiterId))}</td>
+        ${tabCells(e)}
+        <td class="num">${paid(e.beforeCents, e.beforeMethod)}</td>
+        <td class="num">${paid(e.afterCents, e.afterMethod)}${e.closedAgainBy ? ` <small>por ${esc(nameOf(state, e.closedAgainBy))}</small>` : ''}</td>
+        <td>${result.lowered ? `<span class="mx-status">${Icons.svg('alert')} ${result.text}</span>` : result.text}</td>
+      </tr>`;
+      });
+  }
+
+  function cancelTable(m, state) {
+    const total = m.cancels.reduce((sum, e) => sum + e.qty, 0);
+    const summary = total ? ` Unidades canceladas no período: ${fmtNum(total)}.` : '';
+    return auditCard('Cancelamentos', `${CHOSEN_NAME}${summary}`, 'Nenhum item foi cancelado no período.',
+      m.cancels,
+      '<th>Quando</th><th>Cancelado por</th><th>Cliente</th><th>Mesa</th><th>Produto</th><th class="num">Qtd</th>',
+      (e) => `<tr>
+        <td>${Utils.formatWhen(e.at)}</td>
+        <td>${esc(nameOf(state, e.waiterId))}</td>
+        ${tabCells(e)}
+        <td>${esc(e.product)}</td>
+        <td class="num">${fmtNum(e.qty)}</td>
+      </tr>`);
   }
 
   /** Contas abertas há mais tempo sem pedir (ajuda a não esquecer ninguém). */

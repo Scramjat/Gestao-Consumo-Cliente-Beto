@@ -9,7 +9,8 @@
   const METHODS = [
     { id: 'pix', label: 'PIX' },
     { id: 'credito', label: 'Crédito' },
-    { id: 'debito', label: 'Débito' }
+    { id: 'debito', label: 'Débito' },
+    { id: 'dinheiro', label: 'Dinheiro' }
   ];
 
   const norm = (text) => String(text || '')

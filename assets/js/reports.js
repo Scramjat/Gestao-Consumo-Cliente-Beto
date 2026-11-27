@@ -108,7 +108,7 @@ const Reports = (() => {
         const start = periodStart(key);
         const state = await fetchData(key);
         if (!els.dialog.open) return;
-        if (!state.clients.length) {
+        if (!state.clients.length && !state.cancels.length && !state.reopens.length) {
           UI.toast('Não há contas nesse período.', { type: 'warning' });
           return;
         }

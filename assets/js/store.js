@@ -58,11 +58,29 @@ const Store = (() => {
     items: toItems(c.pedidos)
   });
 
+  const toAudit = (e) => ({
+    id: e.id, at: e.quando, waiterId: e.garcomId, tabId: e.comandaId,
+    name: e.cliente, table: e.mesa, removed: e.excluida
+  });
+  const toCancel = (e) => ({ ...toAudit(e), product: e.produto, qty: e.quantidade });
+  const toReopen = (e) => ({
+    ...toAudit(e),
+    beforeCents: e.totalAntes,
+    beforeMethod: e.formaAntes,
+    afterCents: e.totalDepois,
+    afterMethod: e.formaDepois,
+    closedAgainAt: e.encerradaDeNovoEm,
+    closedAgainBy: e.encerradaDeNovoPor
+  });
+
   /** Equipe, preços e contas, vindos de /api/dados ou do histórico. */
   const fromServer = (data) => ({
     employees: data.funcionarios.map((f) => ({ id: f.id, name: f.nome, active: f.ativo })),
     products: data.produtos.map((p) => ({ id: p.id, name: p.nome, priceCents: p.precoCentavos, price: p.precoCentavos / 100 })),
-    clients: data.comandas.map(toClient)
+    clients: data.comandas.map(toClient),
+    // Só o histórico da gerência traz o que foi cancelado e reaberto
+    cancels: (data.cancelamentos || []).map(toCancel),
+    reopens: (data.reaberturas || []).map(toReopen)
   });
 
   function apply(data) {

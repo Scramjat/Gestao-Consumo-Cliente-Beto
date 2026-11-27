@@ -69,7 +69,26 @@
       .sort((a, b) => b.revenueCents - a.revenueCents || b.items - a.items || a.name.localeCompare(b.name, 'pt-BR'));
   }
 
-  const WaiterStats = { compute };
+  /**
+   * O que aconteceu depois de uma reabertura. `lowered` marca o que a gerência
+   * precisa conferir: a comanda passou a registrar menos do que tinha sido pago.
+   */
+  function reopenResult(entry) {
+    if (entry.afterCents == null) {
+      return entry.removed
+        ? { text: 'Comanda excluída', lowered: entry.beforeCents > 0 }
+        : { text: 'Ainda aberta', lowered: false };
+    }
+    const difference = entry.afterCents - entry.beforeCents;
+    if (difference < 0) return { text: 'Valor diminuiu', lowered: true };
+    if (difference > 0) return { text: 'Valor aumentou', lowered: false };
+    return { text: entry.afterMethod === entry.beforeMethod ? 'Mesmo valor' : 'Mesmo valor, outra forma', lowered: false };
+  }
+
+  /** Cancelamentos ou reaberturas feitos no período. */
+  const since = (entries, start) => (entries || []).filter((e) => new Date(e.at).getTime() >= start);
+
+  const WaiterStats = { compute, reopenResult, since };
   root.WaiterStats = WaiterStats;
   if (typeof module !== 'undefined') module.exports = WaiterStats;
 })(typeof window !== 'undefined' ? window : globalThis);

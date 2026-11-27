@@ -85,7 +85,9 @@
 
 /* ---------- Relatórios ---------- */
 .mx-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.mx-table .tag { margin-left: 4px; }
+.mx-table .tag { margin-left: 4px; background: var(--surface-3); color: var(--text-muted); }
+.mx-table tr.is-alert td { background: var(--warning-soft); }
+.mx-table small { color: var(--text-muted); }
 .panel { display: flex; flex-direction: column; gap: 14px; }
 .prod-add--team { grid-template-columns: 1fr auto; }
 .prod.is-off .prod__name { color: var(--text-faint); }

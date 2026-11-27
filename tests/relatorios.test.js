@@ -90,7 +90,7 @@ const column = (sheet, header) => {
 
 test('planilha: abas, colunas de garçom e recorte do período', () => {
   const all = sheets();
-  assert.deepEqual(Object.keys(all), ['Garçons', 'Contas', 'Pedidos', 'Produtos']);
+  assert.deepEqual(Object.keys(all), ['Garçons', 'Contas', 'Pedidos', 'Produtos', 'Reaberturas', 'Cancelamentos']);
   for (const sheet of Object.values(all)) {
     assert.equal(sheet.widths.length, sheet.headers.length, sheet.name);
     for (const row of sheet.rows) assert.equal(row.length, sheet.headers.length, sheet.name);
@@ -120,4 +120,54 @@ test('planilha: gera um arquivo .xlsx e trata texto perigoso como texto', () => 
   const text = Buffer.from(bytes).toString('utf8');   // o zip não usa compressão
   assert.ok(text.includes('=1+1 &lt;b&gt;&quot;&amp;'));
   assert.ok(!text.includes('<f>'), 'nenhuma célula pode virar fórmula');
+});
+
+const reopened = (fields) => ({
+  at: at(15), waiterId: 'bruno', name: 'João', table: '8', removed: false,
+  beforeCents: 10000, beforeMethod: 'pix', afterCents: 10000, afterMethod: 'pix',
+  closedAgainAt: at(16), closedAgainBy: 'ana', ...fields
+});
+
+test('reabertura: só pede conferência quando o registrado fica menor que o pago', () => {
+  const cases = [
+    [{ afterCents: 6000 }, 'Valor diminuiu', true],
+    [{ afterCents: 12000 }, 'Valor aumentou', false],
+    [{}, 'Mesmo valor', false],
+    [{ afterMethod: 'debito' }, 'Mesmo valor, outra forma', false],
+    [{ afterCents: null }, 'Ainda aberta', false],
+    [{ afterCents: null, removed: true }, 'Comanda excluída', true],
+    [{ afterCents: null, removed: true, beforeCents: 0 }, 'Comanda excluída', false],
+    // Foi encerrada de novo e só depois excluída: vale o que foi registrado
+    [{ removed: true }, 'Mesmo valor', false]
+  ];
+  for (const [fields, text, lowered] of cases) {
+    assert.deepEqual(WaiterStats.reopenResult(reopened(fields)), { text, lowered }, JSON.stringify(fields));
+  }
+});
+
+test('planilha: abas de reaberturas e cancelamentos, só do período', () => {
+  const withAudit = {
+    ...state,
+    reopens: [reopened({ at: BEFORE }), reopened({ afterCents: 6000 }), reopened({ afterCents: null, closedAgainAt: null, closedAgainBy: null })],
+    cancels: [
+      { at: BEFORE, waiterId: 'ana', name: 'Antigo', table: '', removed: false, product: 'Cerveja', qty: 9 },
+      { at: at(15), waiterId: 'bruno', name: 'João', table: '8', removed: true, product: 'Cerveja', qty: 2 }
+    ]
+  };
+  const all = Object.fromEntries(Excel.buildSheets(withAudit, START).map((s) => [s.name, s]));
+  for (const sheet of Object.values(all)) {
+    for (const row of sheet.rows) assert.equal(row.length, sheet.headers.length, sheet.name);
+    assert.equal(sheet.widths.length, sheet.headers.length, sheet.name);
+  }
+  const r = all.Reaberturas;
+  assert.deepEqual(column(r, 'Reaberta por'), ['Bruno', 'Bruno']);
+  assert.deepEqual(column(r, 'Pago antes'), [100, 100]);
+  assert.deepEqual(column(r, 'Valor depois'), [60, '']);
+  assert.deepEqual(column(r, 'Diferença'), [-40, '']);
+  assert.deepEqual(column(r, 'Encerrada de novo por'), ['Ana', '']);
+  assert.deepEqual(column(r, 'Conferir'), ['Sim', 'Não']);
+  const c = all.Cancelamentos;
+  assert.deepEqual(column(c, 'Cliente'), ['João']);
+  assert.deepEqual(column(c, 'Quantidade'), [2]);
+  assert.deepEqual(column(c, 'Comanda excluída'), ['Sim']);
 });

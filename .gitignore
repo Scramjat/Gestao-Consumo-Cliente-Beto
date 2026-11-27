@@ -14,3 +14,6 @@ node_modules/
 backups/
 backup.env
 *.backup
+
+# Documentos internos (preços e estratégia): o repositório é público
+interno/

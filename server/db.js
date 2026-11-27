@@ -87,6 +87,7 @@ const SCHEMA = [
      criado_em timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (estabelecimento_id, id)
    )`,
+  `CREATE INDEX IF NOT EXISTS eventos_periodo ON eventos (estabelecimento_id, criado_em)`,
   // Anotada pela ferramenta de cópia de segurança (scripts/backup.js)
   `CREATE TABLE IF NOT EXISTS copias (
      id text PRIMARY KEY,

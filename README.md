@@ -11,7 +11,7 @@ Cada estabelecimento tem o próprio login, a própria equipe, os próprios preç
 3. Quem for atender escolhe o próprio nome em **Atendendo**, no topo. A escolha fica no aparelho até trocarem.
 4. **Novo cliente** abre a conta, com mesa, CPF (opcional) e garçom responsável. O responsável pode ser trocado em **Editar**.
 5. **+ Consumo** lança o pedido no nome de quem está atendendo. **+** lança mais um; **−** cancela uma unidade do pedido mais recente.
-6. **Encerrar** mostra a conta e pede a forma de pagamento. As encerradas ficam em **Concluídos** por 24 horas e podem ser reabertas.
+6. **Encerrar** mostra a conta e pede a forma de pagamento: PIX, crédito, débito ou dinheiro (uma por conta; o sistema não calcula troco nem faz fechamento de caixa). As encerradas ficam em **Concluídos** por 24 horas e podem ser reabertas.
 
 Os aparelhos se atualizam sozinhos a cada 4 segundos. O sistema precisa de internet: sem resposta do servidor, aparece uma faixa vermelha e **nada novo é salvo**; o pedido que falhou continua na janela para tentar de novo.
 
@@ -42,10 +42,19 @@ O quadro **Por garçom** separa duas contas:
 
 - Se o responsável for trocado, o faturamento inteiro da mesa vai para o último.
 - Uma conta paga no período entra no faturamento mesmo que os pedidos sejam de antes dele.
-- Cancelamentos não contam como itens. Quem cancelou fica registrado no banco (`eventos`), mas ainda não aparece no relatório.
+- Cancelamentos não contam como itens; aparecem no quadro próprio.
 - **Quem atendeu cada conta** lista o responsável de cada mesa e todos que lançaram pedidos nela.
 
-A planilha tem as abas **Garçons**, **Contas** (responsável, quem lançou, quem encerrou, pagamento), **Pedidos** (data, hora e quem lançou) e **Produtos**, no mesmo período da tela.
+### Conferência
+
+Reabrir comanda e cancelar itens **não pedem PIN**. Para o gerente conferir depois:
+
+- **Comandas reabertas:** quem reabriu, quando, o valor e a forma de antes, o valor e a forma do encerramento seguinte e quem encerrou. Ficam destacadas as que passaram a registrar **menos do que o pago** e as que foram **excluídas** antes de um novo encerramento.
+- **Cancelamentos:** quem cancelou, quando, o produto, a quantidade e a comanda.
+
+Continuam aparecendo mesmo que a comanda seja excluída. O período vale para o horário da reabertura ou do cancelamento. Um destaque **não prova** irregularidade (pode ser a correção de um erro), e o nome é o escolhido no aparelho, sem senha por garçom. Uma comanda "ainda aberta" não é destacada: confira antes de fechar o dia. A tela mostra os 200 registros mais recentes de cada quadro; a planilha traz todos do período.
+
+A planilha tem as abas **Garçons**, **Contas** (responsável, quem lançou, quem encerrou, pagamento), **Pedidos** (data, hora e quem lançou), **Produtos**, **Reaberturas** e **Cancelamentos**, no mesmo período da tela.
 
 ## Cópia de segurança
 
@@ -173,6 +182,7 @@ server/
   server.js             liga o servidor, entrega as telas, confere o acesso
   rotas.js              rotas da API e limites de tentativas
   estabelecimentos.js   login, PIN e ações do dono
+  auditoria.js          cancelamentos e reaberturas para a gerência
   operacao.js           equipe, produtos, contas e pedidos
   db.js                 tabelas e transações
   auth.js               hash, sessão e limite de tentativas

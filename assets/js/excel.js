@@ -6,6 +6,8 @@
      - Contas    -> uma conta por linha, com quem atendeu
      - Pedidos   -> cada pedido com data, hora e quem lançou
      - Produtos  -> total pedido de cada produto
+     - Reaberturas   -> comandas encerradas que foram reabertas
+     - Cancelamentos -> o que foi cancelado, por quem e quando
    Contas: as que tiveram pedido ou foram encerradas no período.
    Pedidos e Produtos: só os pedidos feitos no período.
    ========================================================= */
@@ -229,6 +231,34 @@
         ];
       });
 
+    // Abas de conferência: quem reabriu e quem cancelou
+    const audit = (e) => [txt(e.name, S.bold), tableCell(e), txt(e.removed ? 'Sim' : 'Não')];
+    const method = (id) => txt(id ? Billing.methodLabel(id) : '');
+    const reopenRows = waiterStats().since(state.reopens, start).map((e) => {
+      const result = waiterStats().reopenResult(e);
+      return [
+        when(e.at, S.dateTime),
+        txt(who(e.waiterId)),
+        ...audit(e),
+        money(e.beforeCents),
+        method(e.beforeMethod),
+        money(e.afterCents),
+        method(e.afterMethod),
+        when(e.closedAgainAt, S.dateTime),
+        txt(who(e.closedAgainBy)),
+        money(e.afterCents == null ? null : e.afterCents - e.beforeCents),
+        txt(result.text),
+        txt(result.lowered ? 'Sim' : 'Não')
+      ];
+    });
+    const cancelRows = waiterStats().since(state.cancels, start).map((e) => [
+      when(e.at, S.dateTime),
+      txt(who(e.waiterId)),
+      ...audit(e),
+      txt(e.product),
+      num(e.qty)
+    ]);
+
     return [
       {
         name: 'Garçons',
@@ -253,6 +283,18 @@
         headers: ['Produto', 'Quantidade total', 'Valor unitário atual', 'Valor total', 'Nº de contas', 'Clientes'],
         widths: [30, 17, 20, 15, 15, 50],
         rows: productRows
+      },
+      {
+        name: 'Reaberturas',
+        headers: ['Reaberta em', 'Reaberta por', 'Cliente', 'Mesa', 'Comanda excluída', 'Pago antes', 'Forma antes', 'Valor depois', 'Forma depois', 'Encerrada de novo em', 'Encerrada de novo por', 'Diferença', 'Resultado', 'Conferir'],
+        widths: [21, 18, 24, 8, 17, 14, 13, 14, 13, 21, 22, 12, 24, 10],
+        rows: reopenRows
+      },
+      {
+        name: 'Cancelamentos',
+        headers: ['Cancelado em', 'Cancelado por', 'Cliente', 'Mesa', 'Comanda excluída', 'Produto', 'Quantidade'],
+        widths: [21, 18, 24, 8, 17, 30, 12],
+        rows: cancelRows
       }
     ];
   }

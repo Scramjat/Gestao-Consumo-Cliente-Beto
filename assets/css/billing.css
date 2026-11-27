@@ -118,7 +118,11 @@
 
 .pay { margin: 0; padding: 0; border: 0; min-width: 0; }
 .pay legend { padding: 0; margin-bottom: 8px; font-size: 13.5px; font-weight: 600; }
-.pay__options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pay__options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+/* Em tela estreita, duas linhas de duas */
+@media (max-width: 480px) {
+  .pay__options { grid-template-columns: repeat(2, 1fr); }
+}
 .pay__opt { position: relative; cursor: pointer; }
 .pay__opt input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .pay__opt span {

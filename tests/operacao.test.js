@@ -281,6 +281,16 @@ test('dados inválidos são recusados', async () => {
   }
 });
 
+test('aceita pagamento em dinheiro e guarda a forma', async () => {
+  const bar = await setup();
+  const tab = await bar.order(await bar.openTab(), bar.ana, 2);
+  const done = await bar.act('POST', `/api/comandas/${tab.id}/encerrar`, {
+    garcomId: bar.ana.id, forma: 'dinheiro', totalEsperadoCentavos: 1500
+  });
+  assert.deepEqual([done.comanda.pagamento.forma, done.comanda.pagamento.totalCentavos], ['dinheiro', 1500]);
+  assert.equal((await bar.read()).comandas[0].pagamento.forma, 'dinheiro');
+});
+
 test('o histórico da gerência traz as contas encerradas do período', async () => {
   const bar = await setup();
   const tab = await bar.order(await bar.openTab());
@@ -303,4 +313,72 @@ test('o histórico da gerência traz as contas encerradas do período', async ()
   const alheio = await app.ok('GET', `${range(-86400000, 86400000)}&abertas=1`, outro.auth);
   assert.equal(alheio.comandas.length, 0);
   assert.ok(!alheio.funcionarios.some((f) => f.id === bar.ana.id));
+});
+
+const auditRange = (bar, from = -86400000, to = 86400000) => app.ok(
+  'GET',
+  `/api/gerencia/historico?de=${new Date(Date.now() + from).toISOString()}&ate=${new Date(Date.now() + to).toISOString()}&abertas=1`,
+  bar.auth
+);
+
+test('a gerência vê cancelamentos e reaberturas, com o valor antes e depois', async () => {
+  const bar = await setup();
+  const tab = await bar.order(await bar.openTab({ cliente: 'João', mesa: '8' }), bar.ana, 4);
+  const orderId = tab.pedidos[0].id;
+  const close = (forma, total, garcom = bar.ana) => bar.act('POST', `/api/comandas/${tab.id}/encerrar`, {
+    garcomId: garcom.id, forma, totalEsperadoCentavos: total
+  });
+  const reopen = () => bar.act('POST', `/api/comandas/${tab.id}/reabrir`, { garcomId: bar.bruno.id });
+
+  await close('pix', 3000);
+  await reopen();
+  await reopen();                                       // reenvio não conta duas vezes
+  let audit = await auditRange(bar);
+  assert.equal(audit.reaberturas.length, 1);
+  assert.deepEqual([audit.reaberturas[0].totalAntes, audit.reaberturas[0].totalDepois], [3000, null]);
+
+  const cancel = { id: uuid(), garcomId: bar.bruno.id, quantidade: 2 };
+  await bar.act('POST', `/api/comandas/${tab.id}/pedidos/${orderId}/cancelar`, cancel);
+  await bar.act('POST', `/api/comandas/${tab.id}/pedidos/${orderId}/cancelar`, cancel);
+  await close('debito', 1500, bar.bruno);
+  await reopen();
+  await close('debito', 1500);
+
+  audit = await auditRange(bar);
+  assert.deepEqual(
+    audit.cancelamentos.map((c) => [c.garcomId, c.cliente, c.mesa, c.produto, c.quantidade, c.excluida]),
+    [[bar.bruno.id, 'João', '8', 'Cerveja', 2, false]]
+  );
+  assert.deepEqual(
+    audit.reaberturas.map((r) => [r.garcomId, r.totalAntes, r.formaAntes, r.totalDepois, r.formaDepois, r.encerradaDeNovoPor]),
+    [
+      [bar.bruno.id, 3000, 'pix', 1500, 'debito', bar.bruno.id],
+      [bar.bruno.id, 1500, 'debito', 1500, 'debito', bar.ana.id]
+    ]
+  );
+  assert.equal((await auditRange(bar, -172800000, -86400000)).cancelamentos.length, 0);
+});
+
+test('cancelar tudo e excluir a comanda não apaga o rastro; outro bar não vê', async () => {
+  const bar = await setup();
+  const tab = await bar.order(await bar.openTab({ cliente: 'Sumido', mesa: '3' }), bar.ana, 1);
+  await bar.act('POST', `/api/comandas/${tab.id}/encerrar`, { garcomId: bar.ana.id, forma: 'pix', totalEsperadoCentavos: 750 });
+  await bar.act('POST', `/api/comandas/${tab.id}/reabrir`, { garcomId: bar.bruno.id });
+  await bar.act('POST', `/api/comandas/${tab.id}/pedidos/${tab.pedidos[0].id}/cancelar`, { id: uuid(), garcomId: bar.bruno.id, quantidade: 1 });
+  await bar.act('DELETE', `/api/comandas/${tab.id}`, { garcomId: bar.bruno.id });
+
+  const audit = await auditRange(bar);
+  assert.equal(audit.comandas.length, 0);
+  for (const entry of [...audit.cancelamentos, ...audit.reaberturas]) {
+    assert.deepEqual([entry.cliente, entry.mesa, entry.excluida], ['Sumido', '3', true]);
+  }
+  assert.equal(audit.reaberturas[0].totalDepois, null);
+
+  const other = await setup();
+  const seen = await auditRange(other);
+  assert.deepEqual([seen.cancelamentos, seen.reaberturas], [[], []]);
+
+  // Sem o PIN, a equipe não recebe esse rastro
+  const staff = await bar.act('GET', '/api/dados');
+  assert.ok(!('cancelamentos' in staff) && !('reaberturas' in staff));
 });

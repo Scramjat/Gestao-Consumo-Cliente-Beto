@@ -17,6 +17,7 @@
 const Billing = require('../assets/js/billing.js');
 const Utils = require('../assets/js/utils.js');
 const V = require('./validar.js');
+const Audit = require('./auditoria.js');
 
 const RECENT_CLOSED_MS = 24 * 3600 * 1000;
 const MAX_HISTORY_MS = 367 * 24 * 3600 * 1000;
@@ -110,8 +111,9 @@ function createOperation({ db }) {
   const tabView = async (c, est, id) => toTab(await requiredTab(c, est, id), (await tabOrders(c, est, id)).map(toOrder));
 
   const record = (c, est, { id = V.newId(), tipo, comandaId = null, garcomId = null, detalhes = null }) => c.query(
-    `INSERT INTO eventos (estabelecimento_id, id, tipo, comanda_id, garcom_id, detalhes)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    // clock_timestamp: hora da gravação, já na vez dela na fila, para a ordem ser a real
+    `INSERT INTO eventos (estabelecimento_id, id, tipo, comanda_id, garcom_id, detalhes, criado_em)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, clock_timestamp())`,
     [est, id, tipo, comandaId, garcomId, JSON.stringify(detalhes)]
   );
 
@@ -203,10 +205,12 @@ function createOperation({ db }) {
           WHERE ${where} ORDER BY p.criado_em, p.id`,
         params
       );
+      const events = await c.query(Audit.SQL, params);
       return {
         funcionarios: employees.rows.map(toEmployee),
         produtos: products.map(toProduct),
-        comandas: groupTabs(tabs.rows, orders.rows)
+        comandas: groupTabs(tabs.rows, orders.rows),
+        ...Audit.summarize(events.rows)
       };
     });
   }
