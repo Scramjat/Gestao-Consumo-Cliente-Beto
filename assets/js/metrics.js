@@ -1,7 +1,7 @@
 /* =========================================================
-   Métricas: indicadores, gráficos e tabela por cliente
+   Métricas: indicadores, gráficos, garçons e tabela por conta
    Tudo calculado a partir dos pedidos (cada um com data e hora)
-   e desenhado em HTML/CSS puro (funciona offline).
+   e desenhado em HTML/CSS puro. Os dados vêm de reports.js.
    ========================================================= */
 
 const Metrics = (() => {
@@ -20,7 +20,7 @@ const Metrics = (() => {
     '24h': { label: 'Últimas 24 horas', start: () => Date.now() - DAY },
     '7d': { label: 'Últimos 7 dias', start: () => Date.now() - 7 * DAY },
     '30d': { label: 'Últimos 30 dias', start: () => Date.now() - 30 * DAY },
-    all: { label: 'Todo o período', start: () => 0 }
+    '12m': { label: 'Últimos 12 meses', start: () => Date.now() - 365 * DAY }
   };
 
   /* ---------- Formatação ---------- */
@@ -75,7 +75,7 @@ const Metrics = (() => {
     // Por produto
     const byProduct = new Map();
     orders.forEach((o) => {
-      const key = o.product.toLowerCase();
+      const key = Billing.norm(o.product);
       const e = byProduct.get(key) || { name: o.product, qty: 0, clients: new Set() };
       e.qty += o.qty;
       e.clients.add(o.client.name);
@@ -141,7 +141,8 @@ const Metrics = (() => {
       const all = c.items.flatMap((i) => i.orders.map((o) => new Date(o.at).getTime()));
       const last = all.length ? Math.max(...all) : null;
       const items = c.items.reduce((s, i) => s + i.qty, 0);
-      return { client: c, items, last, idle: now - (last ?? new Date(c.createdAt).getTime()) };
+      const waiterName = state.employees.find((e) => e.id === c.waiterId)?.name || '—';
+      return { client: c, waiterName, items, last, idle: now - (last ?? new Date(c.createdAt).getTime()) };
     }).sort((a, b) => b.idle - a.idle);
 
     const lastHourItems = orders.filter((o) => o.ts >= now - HOUR).reduce((s, o) => s + o.qty, 0);
@@ -149,7 +150,8 @@ const Metrics = (() => {
     return {
       orders, totalItems, clients, products, hours, peakHour, byDay, weekdays, tables,
       closed, avgStay, avgFirstWait, open, lastHourItems,
-      paid, revenueCents, avgTicketCents, methods
+      paid, revenueCents, avgTicketCents, methods,
+      waiters: WaiterStats.compute(state, start)
     };
   }
 
@@ -223,7 +225,7 @@ const Metrics = (() => {
     const m = compute(state, periodKey);
     const period = PERIODS[periodKey];
 
-    if (!m.orders.length) {
+    if (!m.orders.length && !m.closed.length) {
       container.innerHTML = `<div class="mx-empty mx-empty--big">
         <strong>Nenhum pedido em "${period.label.toLowerCase()}".</strong>
         <span>Escolha outro período ou lance alguns pedidos.</span>
@@ -235,41 +237,65 @@ const Metrics = (() => {
     const top = m.clients[0];
     const topProduct = m.products[0];
     const peak = m.peakHour;
+    const none = '—';
 
     const kpis = [
       kpi('Faturamento', m.paid.length ? Billing.money(m.revenueCents) : '—',
         m.paid.length ? `${fmtNum(m.paid.length)} ${m.paid.length === 1 ? 'conta paga' : 'contas pagas'}` : 'nenhuma conta paga'),
       kpi('Ticket médio', m.avgTicketCents != null ? Billing.money(m.avgTicketCents) : '—', 'valor médio por conta paga'),
       kpi('Itens pedidos', fmtNum(m.totalItems), `em ${fmtNum(m.orders.length)} ${m.orders.length === 1 ? 'pedido' : 'pedidos'}`),
-      kpi('Clientes atendidos', fmtNum(served), `média de ${fmtNum(m.totalItems / served, 1)} itens por cliente`),
-      kpi('Horário de pico', `${hourLabel(peak)}–${hourLabel((peak + 1) % 24)}`, `${fmtNum(m.hours[peak])} itens nessa hora`),
-      kpi('Mais consumiu', esc(top.client.name), `${fmtNum(top.items)} itens${esc(tableName(top.client))}`),
-      kpi('Produto campeão', esc(topProduct.name), `${fmtNum(topProduct.qty)} unidades`),
+      kpi('Clientes atendidos', fmtNum(served), served ? `média de ${fmtNum(m.totalItems / served, 1)} itens por cliente` : ''),
+      kpi('Horário de pico', peak == null ? none : `${hourLabel(peak)}–${hourLabel((peak + 1) % 24)}`,
+        peak == null ? '' : `${fmtNum(m.hours[peak])} itens nessa hora`),
+      kpi('Mais consumiu', top ? esc(top.client.name) : none, top ? `${fmtNum(top.items)} itens${esc(tableName(top.client))}` : ''),
+      kpi('Produto campeão', topProduct ? esc(topProduct.name) : none, topProduct ? `${fmtNum(topProduct.qty)} unidades` : ''),
       kpi('Permanência média', m.avgStay != null ? fmtDuration(m.avgStay) : '—',
         `${fmtNum(m.closed.length)} ${m.closed.length === 1 ? 'conta encerrada' : 'contas encerradas'}`),
-      kpi('Até o 1º pedido', m.avgFirstWait != null ? fmtDuration(m.avgFirstWait) : '—', 'tempo médio após o cadastro'),
+      kpi('Até o 1º pedido', m.avgFirstWait != null ? fmtDuration(m.avgFirstWait) : '—', 'tempo médio após abrir a conta'),
       kpi('Última hora', fmtNum(m.lastHourItems), 'itens nos últimos 60 min')
     ].join('');
 
+    const sections = [waiterTable(m)];
+
+    const byRevenue = m.waiters.filter((w) => w.paidTabs);
+    if (byRevenue.length) {
+      sections.push(card('Faturamento por garçom', 'Contas pagas, pelo responsável da mesa',
+        bars(byRevenue.map((w) => ({
+          label: w.name,
+          value: w.revenueCents,
+          extra: `${w.paidTabs} ${w.paidTabs === 1 ? 'conta' : 'contas'}`
+        })), '', (cents) => Billing.money(cents))));
+    }
+
+    const byItems = m.waiters.filter((w) => w.items).sort((x, y) => y.items - x.items);
+    if (byItems.length) {
+      sections.push(card('Itens lançados por garçom', 'Quem lançou os pedidos',
+        bars(byItems.map((w) => ({
+          label: w.name,
+          value: w.items,
+          extra: `${w.tabsServed} ${w.tabsServed === 1 ? 'conta' : 'contas'}`
+        })))));
+    }
+
     // Consumo por hora: só o trecho com movimento (na ordem do expediente)
-    const active = HOUR_ORDER.filter((h) => m.hours[h] > 0);
-    const from = HOUR_ORDER.indexOf(active[0]);
-    const to = HOUR_ORDER.indexOf(active[active.length - 1]);
-    const hourPoints = HOUR_ORDER.slice(from, to + 1).map((h) => ({
-      label: hourLabel(h), tip: `${hourLabel(h)} às ${hourLabel((h + 1) % 24)}`, value: m.hours[h]
-    }));
+    if (m.orders.length) {
+      const active = HOUR_ORDER.filter((h) => m.hours[h] > 0);
+      const from = HOUR_ORDER.indexOf(active[0]);
+      const to = HOUR_ORDER.indexOf(active[active.length - 1]);
+      const hourPoints = HOUR_ORDER.slice(from, to + 1).map((h) => ({
+        label: hourLabel(h), tip: `${hourLabel(h)} às ${hourLabel((h + 1) % 24)}`, value: m.hours[h]
+      }));
+      sections.push(card('Consumo por hora', 'Itens pedidos em cada hora do dia', columns(hourPoints), true));
 
-    const sections = [];
-    sections.push(card('Consumo por hora', 'Itens pedidos em cada hora do dia', columns(hourPoints), true));
-
-    sections.push(card('Quem mais consumiu', `Itens por cliente · top ${Math.min(10, served)}`,
-      bars(m.clients.slice(0, 10).map((e) => ({
-        label: e.client.name,
-        sub: e.client.table ? `Mesa ${e.client.table}` : '',
-        tipLabel: e.client.name + tableName(e.client),
-        value: e.items,
-        extra: `${e.orders} ${e.orders === 1 ? 'pedido' : 'pedidos'}`
-      })))));
+      sections.push(card('Quem mais consumiu', `Itens por cliente · top ${Math.min(10, served)}`,
+        bars(m.clients.slice(0, 10).map((e) => ({
+          label: e.client.name,
+          sub: e.client.table ? `Mesa ${e.client.table}` : '',
+          tipLabel: e.client.name + tableName(e.client),
+          value: e.items,
+          extra: `${e.orders} ${e.orders === 1 ? 'pedido' : 'pedidos'}`
+        })))));
+    }
 
     if (m.methods.length) {
       sections.push(card('Formas de pagamento', 'Valor recebido em cada forma',
@@ -280,12 +306,14 @@ const Metrics = (() => {
         })), '', (cents) => Billing.money(cents))));
     }
 
-    sections.push(card('Produtos mais pedidos', `Unidades por produto · top ${Math.min(10, m.products.length)}`,
-      bars(m.products.slice(0, 10).map((p) => ({
-        label: p.name,
-        value: p.qty,
-        extra: `${p.clients.size} ${p.clients.size === 1 ? 'cliente' : 'clientes'}`
-      })), 'unidades')));
+    if (m.products.length) {
+      sections.push(card('Produtos mais pedidos', `Unidades por produto · top ${Math.min(10, m.products.length)}`,
+        bars(m.products.slice(0, 10).map((p) => ({
+          label: p.name,
+          value: p.qty,
+          extra: `${p.clients.size} ${p.clients.size === 1 ? 'cliente' : 'clientes'}`
+        })), 'unidades')));
+    }
 
     if (m.byDay.size > 1) {
       const keys = [...m.byDay.keys()].sort();
@@ -308,10 +336,31 @@ const Metrics = (() => {
     }
 
     sections.push(openAccountsCard(m));
-    sections.push(clientTable(m));
+    sections.push(clientTable(m, state));
 
     container.innerHTML = `<div class="mx-kpis">${kpis}</div><div class="mx-cards">${sections.join('')}</div>`;
     return { subtitle: `${period.label} · ${fmtNum(m.totalItems)} itens · ${fmtNum(served)} ${served === 1 ? 'cliente' : 'clientes'}` };
+  }
+
+  /** Quadro com tudo de cada garçom (também é a "visão em tabela" dos gráficos). */
+  function waiterTable(m) {
+    if (!m.waiters.length) return '';
+    const money = (cents) => (cents == null ? '—' : Billing.money(cents));
+    const rows = m.waiters.map((w) => `<tr>
+        <td><strong>${esc(w.name)}</strong>${w.active ? '' : ' <span class="tag">desativado</span>'}</td>
+        <td class="num">${fmtNum(w.paidTabs)}</td>
+        <td class="num">${money(w.paidTabs ? w.revenueCents : null)}</td>
+        <td class="num">${money(w.avgTicketCents)}</td>
+        <td class="num">${fmtNum(w.openTabs)}</td>
+        <td class="num">${fmtNum(w.items)}</td>
+        <td class="num">${money(w.items ? w.launchedCents : null)}${w.unpricedItems ? ` <small>+ ${fmtNum(w.unpricedItems)} sem preço</small>` : ''}</td>
+      </tr>`).join('');
+    return card('Por garçom',
+      'Mesas, faturamento e ticket: responsável pela mesa. Itens e valor lançado: quem lançou o pedido (inclui contas abertas, não é dinheiro recebido). "Abertas agora" não depende do período.',
+      `<div class="mx-table-wrap"><table class="mx-table">
+        <thead><tr><th>Garçom</th><th class="num">Mesas pagas</th><th class="num">Faturamento</th><th class="num">Ticket médio</th><th class="num">Abertas agora</th><th class="num">Itens lançados</th><th class="num">Valor lançado</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`, true);
   }
 
   /** Contas abertas há mais tempo sem pedir (ajuda a não esquecer ninguém). */
@@ -321,7 +370,7 @@ const Metrics = (() => {
       const alert = o.idle >= IDLE_ALERT_MIN * MIN;
       const what = o.last ? `último pedido há ${fmtDuration(o.idle)}` : `sem pedidos há ${fmtDuration(o.idle)}`;
       return `<li class="mx-open${alert ? ' is-alert' : ''}">
-        <span class="mx-open__name">${esc(o.client.name)}${o.client.table ? ` <em>Mesa ${esc(o.client.table)}</em>` : ''}</span>
+        <span class="mx-open__name">${esc(o.client.name)}${o.client.table ? ` <em>Mesa ${esc(o.client.table)}</em>` : ''} <em>· ${esc(o.waiterName)}</em></span>
         <span class="mx-open__when">${what}</span>
         <span class="mx-open__items">${fmtNum(o.items)} ${o.items === 1 ? 'item' : 'itens'}</span>
         ${alert ? `<span class="mx-status">${Icons.svg('alert')} Parado</span>` : ''}
@@ -331,27 +380,34 @@ const Metrics = (() => {
       `<ul class="mx-open-list">${rows}</ul>`);
   }
 
-  /** Tabela com todos os clientes do período (também serve de "visão em tabela" dos gráficos). */
-  function clientTable(m) {
-    const rows = m.clients.map((e) => {
-      const c = e.client;
-      const stay = c.closedAt ? fmtDuration(new Date(c.closedAt) - new Date(c.createdAt)) : 'aberta';
-      return `<tr>
-        <td><strong>${esc(c.name)}</strong></td>
-        <td>${esc(c.table || '—')}</td>
-        <td class="num">${fmtNum(e.items)}</td>
-        <td class="num">${fmtNum(e.orders)}</td>
-        <td class="num">${Utils.formatWhen(new Date(e.first).toISOString())}</td>
-        <td class="num">${Utils.formatWhen(new Date(e.last).toISOString())}</td>
-        <td>${stay}</td>
-      </tr>`;
-    }).join('');
-    return card('Resumo por cliente', 'Todos os clientes com pedidos no período', `
+  /** Quem atendeu cada conta: as que tiveram pedido ou foram encerradas no período. */
+  function clientTable(m, state) {
+    const name = (id) => state.employees.find((e) => e.id === id)?.name || '—';
+    const entries = new Map(m.clients.map((e) => [e.client, e]));
+    m.closed.forEach((c) => { if (!entries.has(c)) entries.set(c, { client: c, items: 0 }); });
+    const rows = [...entries.values()]
+      .sort((a, b) => b.client.createdAt.localeCompare(a.client.createdAt))
+      .map((e) => {
+        const c = e.client;
+        const launched = [...new Set(c.items.flatMap((i) => i.orders.map((o) => o.waiterId)))].map(name);
+        const stay = c.closedAt ? fmtDuration(new Date(c.closedAt) - new Date(c.createdAt)) : 'aberta';
+        return `<tr>
+          <td><strong>${esc(c.name)}</strong></td>
+          <td>${esc(c.table || '—')}</td>
+          <td>${esc(name(c.waiterId))}</td>
+          <td>${esc(launched.join(', ') || '—')}</td>
+          <td class="num">${fmtNum(e.items)}</td>
+          <td class="num">${c.payment ? Billing.money(c.payment.totalCents) : '—'}</td>
+          <td class="num">${Utils.formatWhen(c.createdAt)}</td>
+          <td>${stay}</td>
+        </tr>`;
+      }).join('');
+    return card('Quem atendeu cada conta', 'Contas com pedido ou encerradas no período', `
       <div class="mx-table-wrap"><table class="mx-table">
-        <thead><tr><th>Cliente</th><th>Mesa</th><th class="num">Itens</th><th class="num">Pedidos</th><th class="num">Primeiro</th><th class="num">Último</th><th>Permanência</th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Mesa</th><th>Responsável</th><th>Lançaram pedidos</th><th class="num">Itens no período</th><th class="num">Pago</th><th class="num">Abertura</th><th>Permanência</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>`, true);
   }
 
-  return { render, PERIODS };
+  return { render, compute, PERIODS };
 })();

@@ -1,14 +1,11 @@
 /* =========================================================
    Segurança: senhas, sessão e limite de tentativas
-   - Login confere um HASH (scrypt) da senha, que não dá para desfazer.
-   - O painel de acessos precisa MOSTRAR a senha, então ela também fica
-     guardada CIFRADA (AES-256-GCM) com uma chave que só existe no
-     servidor (ENCRYPTION_KEY). Quem lê só o banco não vê as senhas.
+   Senhas e PINs são guardados só como HASH (scrypt), que não dá
+   para desfazer. Ninguém consegue ver uma senha: só criar outra.
    ========================================================= */
 
 const crypto = require('crypto');
 
-/* ---------- Senha para o login (não reversível) ---------- */
 const scrypt = (password, salt) => new Promise((resolve, reject) => {
   crypto.scrypt(String(password), salt, 64, (err, key) => (err ? reject(err) : resolve(key)));
 });
@@ -27,78 +24,87 @@ async function verifyPassword(password, stored) {
   return key.length === expected.length && crypto.timingSafeEqual(key, expected);
 }
 
-/* ---------- Senha para o painel (reversível, cifrada) ---------- */
-const deriveKey = (secret) => crypto.createHash('sha256').update(`comanda-senhas:${secret}`).digest();
+/* ---------- Senhas geradas ---------- */
+// Sem letras e números que se confundem (0/o, 1/l/i)
+const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
-function encrypt(text, secret) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(secret), iv);
-  const data = Buffer.concat([cipher.update(String(text), 'utf8'), cipher.final()]);
-  return ['v1', iv, cipher.getAuthTag(), data].map((p, i) => (i === 0 ? p : p.toString('base64'))).join(':');
-}
+const randomPassword = (length = 12) =>
+  Array.from({ length }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');
 
-/** Devolve o texto, ou null se a chave mudou / o dado foi alterado. */
-function decrypt(blob, secret) {
-  try {
-    const [version, iv, tag, data] = String(blob || '').split(':');
-    if (version !== 'v1') return null;
-    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(secret), Buffer.from(iv, 'base64'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64'));
-    return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
-  } catch {
-    return null;
-  }
+/** PIN de 6 números que não seja uma sequência óbvia. */
+const isWeakPin = (pin) => /^(\d)\1{5}$/.test(pin) || '01234567890'.includes(pin) || '09876543210'.includes(pin);
+
+function randomPin() {
+  let pin;
+  do pin = String(crypto.randomInt(1000000)).padStart(6, '0'); while (isWeakPin(pin));
+  return pin;
 }
 
 /* ---------- Sessão (token assinado) ---------- */
-const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 const sign = (payload, secret) => crypto.createHmac('sha256', secret).update(payload).digest('base64url');
 
-/** `v` é a versão da senha: trocar a senha invalida todas as sessões da conta. */
-function createToken(login, version, secret) {
-  const payload = Buffer.from(JSON.stringify({ u: login, v: version, exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
+/** `tipo` separa os acessos: um token de um tipo nunca vale no lugar de outro. */
+function createToken(tipo, data, ttlMs, secret) {
+  const payload = Buffer.from(JSON.stringify({ ...data, t: tipo, exp: Date.now() + ttlMs })).toString('base64url');
   return `${payload}.${sign(payload, secret)}`;
 }
 
-function verifyToken(token, secret) {
+function verifyToken(tipo, token, secret) {
   const [payload, signature] = String(token || '').split('.');
   if (!payload || !signature) return null;
-  const expected = sign(payload, secret);
-  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const expected = Buffer.from(sign(payload, secret));
+  const received = Buffer.from(signature);
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return data.exp > Date.now() ? data : null;
+    return data.t === tipo && data.exp > Date.now() ? data : null;
   } catch {
     return null;
   }
 }
 
-/* ---------- Limite de tentativas de login ---------- */
-function createLimiter({ windowMs = 10 * 60 * 1000, maxPerIp = 8, maxTotal = 60 } = {}) {
-  const byIp = new Map();
-  let total = { count: 0, resetAt: 0 };
+/* ---------- Limite de tentativas ---------- */
+/**
+ * Conta erros por chave (aparelho, login...). Cada chave tem o seu limite, assim
+ * os erros de um estabelecimento não bloqueiam os outros.
+ */
+function createLimiter({ windowMs = 10 * 60 * 1000 } = {}) {
+  const entries = new Map();
+  const current = (key) => {
+    const entry = entries.get(key);
+    if (entry && entry.resetAt > Date.now()) return entry;
+    entries.delete(key);
+    return null;
+  };
+  const sweep = setInterval(() => { for (const key of entries.keys()) current(key); }, windowMs);
+  sweep.unref();
+
   return {
-    blocked(ip) {
-      const now = Date.now();
-      const a = byIp.get(ip);
-      if (a && a.resetAt > now && a.count >= maxPerIp) return true;
-      return total.resetAt > now && total.count >= maxTotal;
+    /** rules: [[chave, máximo de erros], ...] */
+    blocked: (rules) => rules.some(([key, max]) => (current(key)?.count || 0) >= max),
+    /** Conta a tentativa antes de conferir a senha, para pedidos simultâneos não furarem o limite. */
+    hit(rules) {
+      for (const [key] of rules) {
+        const entry = current(key);
+        if (entry) entry.count += 1;
+        else entries.set(key, { count: 1, resetAt: Date.now() + windowMs });
+      }
     },
-    fail(ip) {
-      const now = Date.now();
-      const a = byIp.get(ip);
-      if (!a || a.resetAt <= now) byIp.set(ip, { count: 1, resetAt: now + windowMs });
-      else a.count += 1;
-      if (total.resetAt <= now) total = { count: 0, resetAt: now + windowMs };
-      total.count += 1;
+    /** A senha estava certa: esta tentativa não conta como erro. */
+    forgive(rules) {
+      for (const [key] of rules) {
+        const entry = current(key);
+        if (entry) entry.count -= 1;
+      }
     },
-    ok(ip) { byIp.delete(ip); }
+    clear: (key) => { entries.delete(key); }
   };
 }
 
-const digest = (text) => crypto.createHash('sha256').update(String(text)).digest();
+const digest = (value) => crypto.createHash('sha256').update(String(value)).digest();
 const safeEqual = (a, b) => crypto.timingSafeEqual(digest(a), digest(b));
 
 module.exports = {
-  hashPassword, verifyPassword, encrypt, decrypt, createToken, verifyToken, createLimiter, safeEqual
+  hashPassword, verifyPassword, randomPassword, randomPin, isWeakPin,
+  createToken, verifyToken, createLimiter, safeEqual
 };

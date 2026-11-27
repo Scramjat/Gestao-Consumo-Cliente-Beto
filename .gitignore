@@ -9,3 +9,8 @@ server/erros.log
 .claude/
 
 node_modules/
+
+# Cópias de segurança e a configuração delas (senhas) - NUNCA enviar para o GitHub
+backups/
+backup.env
+*.backup

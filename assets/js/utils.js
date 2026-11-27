@@ -105,3 +105,5 @@ const Utils = {
     return `${n} ${n === 1 ? one : many}`;
   }
 };
+
+if (typeof module !== 'undefined') module.exports = Utils;

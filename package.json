@@ -5,6 +5,10 @@
   "description": "Gestão Consumo Cliente - Beto",
   "scripts": {
     "start": "node server/server.js",
+    "backup": "node scripts/backup.js criar",
+    "backup:checar": "node scripts/backup.js checar",
+    "backup:conferir": "node scripts/backup.js conferir",
+    "backup:restaurar": "node scripts/backup.js restaurar",
     "test": "node --test"
   },
   "engines": {
@@ -12,8 +16,5 @@
   },
   "dependencies": {
     "pg": "^8.23.1"
-  },
-  "devDependencies": {
-    "pg-mem": "^3.0.14"
   }
 }

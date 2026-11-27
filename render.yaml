@@ -2,12 +2,11 @@
 # No Render: New + → Blueprint → escolha este repositório. O Render lê este arquivo.
 #
 # Segredos NÃO ficam no código (o repositório é público): o Render pergunta
-# o DATABASE_URL, ou você cola em Dashboard → o serviço → Environment.
-#   DATABASE_URL    endereço do banco Postgres (Neon). Sem ele o sistema ainda sobe,
-#                   mas guarda os dados em arquivo e eles somem quando o servidor reinicia.
-#   SESSION_SECRET  assina as sessões (gerado sozinho)
-#   ENCRYPTION_KEY  cifra as senhas guardadas no banco, para o painel poder mostrá-las (gerado sozinho)
-#   SENHA_INICIAL   (opcional) senha das 3 contas na primeira vez; sem ela é "beto"
+# os marcados com "sync: false", ou você cola em Dashboard → o serviço → Environment.
+#   DATABASE_URL      (obrigatória) endereço do banco Postgres (Neon)
+#   SESSION_SECRET    assina as sessões (gerado sozinho)
+#   PLATAFORMA_SENHA  senha do painel do dono (/plataforma), 12 caracteres ou mais
+#   PLATAFORMA_LOGIN  (opcional) login do painel; sem ele é "dono"
 
 services:
   - type: web
@@ -24,7 +23,7 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
-      - key: ENCRYPTION_KEY
-        generateValue: true
+      - key: PLATAFORMA_SENHA
+        sync: false
       - key: NODE_VERSION
         value: 22

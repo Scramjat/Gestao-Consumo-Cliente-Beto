@@ -1,0 +1,94 @@
+/* Painel da plataforma (só o dono usa). As cores vêm de theme.css. */
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.4rem; margin: 0 0 16px; }
+h2 { font-size: 1.05rem; margin: 0 0 12px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+header h1 { margin: 0; }
+
+.card, li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.card--narrow { max-width: 360px; margin: 10vh auto 0; }
+.card--secret { border-color: var(--primary); background: var(--primary-soft); }
+
+form { display: grid; gap: 12px; }
+.row { grid-template-columns: 1fr 1fr auto; align-items: end; }
+label { display: grid; gap: 4px; font-size: 0.9rem; color: var(--text-muted); }
+
+input {
+  min-height: 44px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover { background: var(--primary-hover); }
+button:disabled { opacity: 0.6; cursor: wait; }
+button.secondary { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+button.secondary:hover { background: var(--surface-3); }
+button.danger { background: var(--danger-soft); color: var(--danger-hover); }
+button.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+:focus-visible { outline: none; box-shadow: var(--ring); }
+
+ul { list-style: none; margin: 0; padding: 0; }
+li h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+li p { margin: 2px 0 12px; }
+.muted { color: var(--text-muted); font-size: 0.9rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--danger-soft);
+  color: var(--danger-hover);
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 0; }
+dt { color: var(--text-muted); }
+dd { margin: 0; font-family: ui-monospace, Consolas, monospace; font-size: 1.1rem; user-select: all; overflow-wrap: anywhere; }
+
+.message { padding: 10px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--danger-hover); }
+
+.copy-status { padding: 10px 14px; border-radius: 10px; border: 1px solid; }
+.copy-status.is-ok { background: var(--success-soft); border-color: var(--success); }
+.copy-status.is-warn { background: var(--warning-soft); border-color: var(--warning); }
+.copy-status.is-late { background: var(--danger-soft); border-color: var(--danger); font-weight: 600; }
+
+@media (max-width: 600px) {
+  .row { grid-template-columns: 1fr; }
+}

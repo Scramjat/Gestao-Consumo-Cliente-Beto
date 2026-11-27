@@ -1,10 +1,13 @@
 /* =========================================================
-   Planilha Excel (.xlsx) com tudo de cada cliente
-   Gerada aqui mesmo, sem bibliotecas externas (funciona offline).
+   Planilha Excel (.xlsx) de um período
+   Gerada aqui mesmo, sem bibliotecas externas.
    Abas:
-     - Clientes  -> um cliente por linha, com resumo do consumo
-     - Pedidos   -> cada pedido com data e hora (com segundos)
+     - Garçons   -> mesas, faturamento e itens de cada um
+     - Contas    -> uma conta por linha, com quem atendeu
+     - Pedidos   -> cada pedido com data, hora e quem lançou
      - Produtos  -> total pedido de cada produto
+   Contas: as que tiveram pedido ou foram encerradas no período.
+   Pedidos e Produtos: só os pedidos feitos no período.
    ========================================================= */
 
 (function (root) {
@@ -120,87 +123,99 @@
   /** Valor em reais (célula numérica com formato de moeda); vazio quando não tem preço. */
   const money = (cents) => (cents == null ? txt('') : num(cents / 100, S.money));
 
-  const methodName = (id) => (typeof Billing !== 'undefined' ? Billing.methodLabel(id) : '');
-
   function situation(client) {
     return client.closedAt ? txt('Encerrada', S.closed) : txt('Aberta', S.open);
   }
 
-  function ordersOf(client, item) {
-    return item.orders && item.orders.length
-      ? item.orders
-      : [{ qty: item.qty, at: item.addedAt || client.createdAt }];
-  }
+  const billing = () => root.Billing || require('./billing.js');
+  const waiterStats = () => root.WaiterStats || require('./waiter-stats.js');
 
-  // Coluna "Atendente": pronta, só aparece com Features.attendant = true
-  const attendantOn = () => typeof Features !== 'undefined' && Features.attendant;
-  const attendantCell = (client) => (attendantOn() ? [txt(client.attendant || '')] : []);
-  const insertAt = (list, index, value) => (attendantOn() ? [...list.slice(0, index), value, ...list.slice(index)] : list);
+  /** state: { clients, products, employees }; start: início do período (ms). */
+  function buildSheets(state, start = 0) {
+    const Billing = billing();
+    const inPeriod = (iso) => !!iso && new Date(iso).getTime() >= start;
+    const names = new Map(state.employees.map((e) => [e.id, e.name]));
+    const who = (id) => (id ? names.get(id) || '—' : '');
+    const ordersOf = (c) => c.items.flatMap((item) => item.orders.map((o) => ({ ...o, product: item.product, client: c })));
 
-  function buildSheets(state) {
-    const clients = state.clients.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const clients = state.clients
+      .filter((c) => inPeriod(c.closedAt) || ordersOf(c).some((o) => inPeriod(o.at)) || (!c.closedAt && inPeriod(c.createdAt)))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     // Conta de cada cliente (encerrada: valores guardados no pagamento; aberta: preços atuais)
     const bills = new Map(clients.map((c) => [c, Billing.bill(c, state.products || [])]));
-    const lineOf = (client, product) => {
+    const unitOf = (client, product) => {
       const key = Billing.norm(product);
-      return bills.get(client).lines.find((l) => Billing.norm(l.product) === key) || {};
+      return bills.get(client).lines.find((l) => Billing.norm(l.product) === key)?.unitCents ?? null;
     };
 
-    // Aba 1: Clientes
+    // Aba: Garçons
+    const waiterRows = waiterStats().compute(state, start).map((w) => [
+      txt(w.name, S.bold),
+      num(w.paidTabs),
+      money(w.revenueCents),
+      money(w.avgTicketCents),
+      num(w.openTabs),
+      num(w.items),
+      num(w.tabsServed),
+      money(w.launchedCents),
+      num(w.unpricedItems)
+    ]);
+
+    // Aba: Contas
     const clientRows = clients.map((c) => {
-      const total = c.items.reduce((s, i) => s + i.qty, 0);
-      const firstOrder = c.items.flatMap((i) => ordersOf(c, i)).map((o) => o.at).sort()[0];
+      const all = ordersOf(c).sort((a, b) => a.at.localeCompare(b.at));
+      const total = c.items.reduce((sum, i) => sum + i.qty, 0);
       return [
         txt(c.name, S.bold),
         tableCell(c),
-        ...attendantCell(c),
+        txt(who(c.waiterId)),
+        txt([...new Set(all.map((o) => who(o.waiterId)))].join(', ')),
         txt(formatCPF(c.cpf)),
         when(c.createdAt, S.dateTime),
         situation(c),
         when(c.closedAt, S.dateTime),
+        txt(who(c.closedBy)),
         num(total),
         money(c.items.length ? bills.get(c).totalCents : null),
-        txt(methodName(bills.get(c).method)),
-        when(firstOrder, S.dateTime),
+        txt(Billing.methodLabel(bills.get(c).method)),
+        when(all[0]?.at, S.dateTime),
         txt(c.items.map((i) => `${i.qty} ${i.product}`).join('\n'))
       ];
     });
 
-    // Aba 2: Pedidos (cada pedido com data e hora)
-    const orders = [];
-    clients.forEach((c) => c.items.forEach((item) => ordersOf(c, item).forEach((o) => {
-      orders.push({ at: o.at, client: c, product: item.product, qty: o.qty });
-    })));
-    orders.sort((a, b) => a.at.localeCompare(b.at));
+    // Aba: Pedidos (cada pedido com data e hora)
+    const orders = clients.flatMap(ordersOf).filter((o) => inPeriod(o.at)).sort((a, b) => a.at.localeCompare(b.at));
     const orderRows = orders.map((o) => {
-      const unit = lineOf(o.client, o.product).unitCents;
+      const unit = unitOf(o.client, o.product);
       return [
         when(o.at, S.date),
         when(o.at, S.time),
         txt(o.client.name, S.bold),
         tableCell(o.client),
-        ...attendantCell(o.client),
+        txt(who(o.waiterId)),
+        txt(who(o.client.waiterId)),
         txt(o.product),
         num(o.qty),
-        money(unit == null ? null : unit),
+        money(unit),
         money(unit == null ? null : unit * o.qty),
         txt(formatCPF(o.client.cpf)),
         situation(o.client)
       ];
     });
 
-    // Aba 3: Produtos
-    const products = {};
+    // Aba: Produtos
+    const products = new Map();
     orders.forEach((o) => {
-      const key = o.product.toLowerCase();
-      const unit = lineOf(o.client, o.product).unitCents;
-      products[key] ||= { name: o.product, qty: 0, cents: 0, priced: false, clients: new Set() };
-      products[key].qty += o.qty;
-      if (unit != null) { products[key].cents += unit * o.qty; products[key].priced = true; }
-      products[key].clients.add(o.client.name);
+      const key = Billing.norm(o.product);
+      const unit = unitOf(o.client, o.product);
+      if (!products.has(key)) products.set(key, { name: o.product, qty: 0, cents: 0, priced: false, clients: new Map() });
+      const product = products.get(key);
+      product.qty += o.qty;
+      if (unit != null) { product.cents += unit * o.qty; product.priced = true; }
+      product.clients.set(o.client.id, o.client.name);
     });
-    const productRows = Object.values(products)
+    const productRows = [...products.values()]
       .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name, 'pt-BR'))
       .map((p) => {
         const listed = Billing.findProduct(state.products || [], p.name);
@@ -210,27 +225,33 @@
           money(listed ? Billing.toCents(listed.price) : null),
           money(p.priced ? p.cents : null),
           num(p.clients.size),
-          txt([...p.clients].join(', '))
+          txt([...p.clients.values()].join(', '))
         ];
       });
 
     return [
       {
-        name: 'Clientes',
-        headers: insertAt(['Cliente', 'Mesa', 'CPF', 'Cadastro', 'Situação', 'Encerrada em', 'Itens', 'Valor da conta', 'Pagamento', 'Primeiro pedido', 'Consumo'], 2, 'Atendente'),
-        widths: insertAt([24, 8, 16, 21, 12, 21, 8, 16, 13, 21, 42], 2, 18),
+        name: 'Garçons',
+        headers: ['Garçom', 'Mesas pagas (responsável)', 'Faturamento (responsável)', 'Ticket médio', 'Contas abertas agora', 'Itens lançados', 'Contas em que lançou', 'Valor lançado', 'Itens lançados sem preço'],
+        widths: [24, 26, 26, 15, 21, 15, 21, 16, 24],
+        rows: waiterRows
+      },
+      {
+        name: 'Contas',
+        headers: ['Cliente', 'Mesa', 'Garçom responsável', 'Lançaram pedidos', 'CPF', 'Abertura', 'Situação', 'Encerrada em', 'Encerrada por', 'Itens', 'Valor da conta', 'Pagamento', 'Primeiro pedido', 'Consumo'],
+        widths: [24, 8, 22, 28, 16, 21, 12, 21, 18, 8, 16, 13, 21, 42],
         rows: clientRows
       },
       {
         name: 'Pedidos',
-        headers: insertAt(['Data', 'Hora', 'Cliente', 'Mesa', 'Produto', 'Quantidade', 'Valor unitário', 'Valor total', 'CPF', 'Situação da conta'], 4, 'Atendente'),
-        widths: insertAt([12, 10, 24, 8, 30, 12, 15, 14, 16, 18], 4, 18),
+        headers: ['Data', 'Hora', 'Cliente', 'Mesa', 'Lançado por', 'Garçom responsável', 'Produto', 'Quantidade', 'Valor unitário', 'Valor total', 'CPF', 'Situação da conta'],
+        widths: [12, 10, 24, 8, 18, 20, 30, 12, 15, 14, 16, 18],
         rows: orderRows
       },
       {
         name: 'Produtos',
-        headers: ['Produto', 'Quantidade total', 'Valor unitário', 'Valor total', 'Nº de clientes', 'Clientes'],
-        widths: [30, 17, 15, 15, 15, 50],
+        headers: ['Produto', 'Quantidade total', 'Valor unitário atual', 'Valor total', 'Nº de contas', 'Clientes'],
+        widths: [30, 17, 20, 15, 15, 50],
         rows: productRows
       }
     ];
@@ -355,12 +376,13 @@ ${rels}
   }
 
   /** Bytes do arquivo .xlsx */
-  function build(state) {
-    return zip(workbookFiles(buildSheets(state)));
+  function build(state, start = 0) {
+    return zip(workbookFiles(buildSheets(state, start)));
   }
 
   const Excel = {
     build,
+    buildSheets,
     MIME: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   };
   root.Excel = Excel;

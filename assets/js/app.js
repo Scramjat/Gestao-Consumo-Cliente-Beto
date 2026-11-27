@@ -4,24 +4,23 @@
 
 (() => {
   const $ = (sel) => document.querySelector(sel);
+  const esc = Utils.escapeHTML;
 
   const els = {
+    brandTitle: $('#brandTitle'),
     todayLabel: $('#todayLabel'),
     list: $('#clientList'),
+    loading: $('#loadingState'),
     empty: $('#emptyState'),
     noResults: $('#noResults'),
     search: $('#searchInput'),
+    waiterFilter: $('#waiterFilter'),
     filterGroup: $('#filterGroup'),
     statsGroup: $('#statsGroup'),
     itemsDialog: $('#itemsDialog'),
     itemsDialogSub: $('#itemsDialogSub'),
     itemsViewGroup: $('#itemsView'),
     itemsReport: $('#itemsReport'),
-    metricsDialog: $('#metricsDialog'),
-    metricsSub: $('#metricsSub'),
-    metricsPeriod: $('#metricsPeriod'),
-    metricsContent: $('#metricsContent'),
-    metricsTooltip: $('#metricsTooltip'),
     statClients: $('#statClients'),
     statItems: $('#statItems'),
     statIdle: $('#statIdle'),
@@ -34,7 +33,6 @@
     noResultsTitle: $('#noResultsTitle'),
     noResultsText: $('#noResultsText'),
     dbBanner: $('#dbBanner'),
-    dbBannerText: $('#dbBannerText'),
 
     clientDialog: $('#clientDialog'),
     clientForm: $('#clientForm'),
@@ -42,17 +40,18 @@
     clientName: $('#clientName'),
     clientCpf: $('#clientCpf'),
     clientTable: $('#clientTable'),
-    attendantField: $('#attendantField'),
-    clientAttendant: $('#clientAttendant'),
+    clientWaiter: $('#clientWaiter'),
     nameError: $('#nameError'),
     cpfError: $('#cpfError'),
+    clientError: $('#clientError'),
 
     itemDialog: $('#itemDialog'),
     itemForm: $('#itemForm'),
     itemDialogClient: $('#itemDialogClient'),
+    itemWaiter: $('#itemWaiter'),
     itemProduct: $('#itemProduct'),
     itemQty: $('#itemQty'),
-    productError: $('#productError'),
+    productError: $('#itemError'),
     productSuggest: $('#productSuggest'),
     productHint: $('#productHint'),
     itemCurrent: $('#itemCurrent'),
@@ -63,10 +62,6 @@
     loginPass: $('#loginPass'),
     loginError: $('#loginError'),
     loginSubmit: $('#loginSubmit'),
-    btnLogout: $('#btnLogout'),
-    btnAccess: $('#btnAccess'),
-    passBanner: $('#passBanner'),
-    passBannerText: $('#passBannerText'),
 
     closeDialog: $('#closeDialog'),
     closeForm: $('#closeForm'),
@@ -74,14 +69,17 @@
     closeBill: $('#closeBill'),
     closeWarning: $('#closeWarning'),
     closeTotal: $('#closeTotal'),
+    closeConfirm: $('#closeConfirm'),
     payOptions: $('#payOptions'),
     payError: $('#payError')
   };
 
+  const LAST_LOGIN_KEY = 'comanda:ultimoLogin';
+
   let filter = 'all';
+  let waiterFilter = '';          // '' = todos, 'mine' = minhas mesas, ou o id de um garçom
   let query = '';
-  let editingId = null;   // cliente sendo editado (null = novo)
-  let itemClientId = null; // cliente que está recebendo consumo
+  const busy = new Set();         // contas com uma ação a caminho do servidor
 
   /* =====================================================
      Renderização
@@ -91,21 +89,22 @@
     const qDigits = Utils.onlyDigits(query);
     // Aceita "5", "mesa 5" ou "m5"
     const qTable = q.replace(/^(mesa|m)\s*/, '');
-    const shown = clients
-      .filter((c) => {
-        // Contas encerradas só aparecem na aba "Concluídos"
-        if (filter === 'closed') { if (!c.closedAt) return false; }
-        else if (c.closedAt) return false;
-        if (filter === 'consuming' && !c.items.length) return false;
-        if (filter === 'idle' && c.items.length) return false;
-        if (!q) return true;
-        return Utils.normalize(c.name).includes(q)
-          // Mesa: número exato, para "5" não trazer a mesa 15
-          || (c.table && Utils.normalize(c.table) === qTable)
-          || (Features.attendant && c.attendant && Utils.normalize(c.attendant).includes(q))
-          // CPF: a partir de 3 números, para não confundir com o número da mesa
-          || (qDigits.length >= 3 && c.cpf.includes(qDigits));
-      });
+    const only = waiterFilter === 'mine' ? Store.waiter()?.id : waiterFilter;
+    const shown = clients.filter((c) => {
+      // Contas encerradas só aparecem na aba "Concluídos"
+      if (filter === 'closed') { if (!c.closedAt) return false; }
+      else if (c.closedAt) return false;
+      if (filter === 'consuming' && !c.items.length) return false;
+      if (filter === 'idle' && c.items.length) return false;
+      if (waiterFilter && c.waiterId !== only) return false;
+      if (!q) return true;
+      return Utils.normalize(c.name).includes(q)
+        // Mesa: número exato, para "5" não trazer a mesa 15
+        || (c.table && Utils.normalize(c.table) === qTable)
+        || Utils.normalize(Store.employeeName(c.waiterId)).includes(q)
+        // CPF: a partir de 3 números, para não confundir com o número da mesa
+        || (qDigits.length >= 3 && c.cpf.includes(qDigits));
+    });
 
     // Abertos: últimos cadastrados primeiro. Concluídos: últimos encerrados primeiro.
     return filter === 'closed'
@@ -115,16 +114,32 @@
 
   const emptyMessages = {
     all: ['Ninguém na casa', 'Todas as contas foram encerradas. Veja em Concluídos.'],
-    consuming: ['Ninguém consumindo', 'Nenhum cliente aberto com consumo lançado.'],
-    idle: ['Todo mundo já pediu', 'Não há clientes abertos sem consumo.'],
-    closed: ['Nenhuma conta encerrada', 'Quando um cliente pagar, clique em Encerrar no cartão dele.']
+    consuming: ['Ninguém consumindo', 'Nenhuma conta aberta com consumo lançado.'],
+    idle: ['Todo mundo já pediu', 'Não há contas abertas sem consumo.'],
+    closed: ['Nenhuma conta encerrada', 'Aqui aparecem as contas encerradas nas últimas 24 horas.']
   };
 
-  function render(reason = null) {
-    const state = Store.get();
-    const clients = state.clients;
+  let waiterOptions = '';
 
+  function renderWaiterFilter() {
+    const html = '<option value="">Todos os garçons</option><option value="mine">Minhas mesas</option>'
+      + Store.get().employees
+        .filter((p) => p.active || Store.get().clients.some((c) => c.waiterId === p.id))
+        .map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    if (html === waiterOptions) return;
+    els.waiterFilter.innerHTML = html;
+    waiterOptions = html;
+    els.waiterFilter.value = waiterFilter;
+    if (els.waiterFilter.value !== waiterFilter) waiterFilter = els.waiterFilter.value = '';
+  }
+
+  function render() {
+    const { clients } = Store.get();
+    const loaded = Store.isLoaded();
+
+    els.brandTitle.textContent = Api.establishment()?.nome || 'Comanda';
     els.todayLabel.textContent = Utils.formatToday();
+    renderWaiterFilter();
 
     const totalItems = clients.reduce((s, c) => s + c.items.reduce((t, i) => t + i.qty, 0), 0);
     const open = clients.filter((c) => !c.closedAt);
@@ -141,38 +156,65 @@
     els.countClosed.textContent = closed;
 
     const shown = visibleClients(clients);
-    UI.renderList(els.list, shown, reason);
+    UI.renderList(els.list, shown);
 
-    els.empty.hidden = clients.length > 0;
-    els.noResults.hidden = !clients.length || shown.length > 0;
+    els.loading.hidden = loaded || !Api.hasSession();
+    els.empty.hidden = !loaded || clients.length > 0;
+    els.noResults.hidden = !loaded || !clients.length || shown.length > 0;
     if (!els.noResults.hidden) {
-      const [title, text] = query.trim()
-        ? ['Nada encontrado', 'Nenhum cliente corresponde à busca nesta aba.']
+      const [title, text] = query.trim() || waiterFilter
+        ? ['Nada encontrado', 'Nenhuma conta corresponde à busca ou ao garçom nesta aba.']
         : emptyMessages[filter];
       els.noResultsTitle.textContent = title;
       els.noResultsText.textContent = text;
     }
   }
 
-  /* =====================================================
-     Cliente: cadastrar / editar / excluir
-     ===================================================== */
-  function setFieldError(input, errorEl, message) {
-    errorEl.textContent = message || '';
-    input.closest('.field').classList.toggle('has-error', !!message);
+  /**
+   * Roda uma ação numa conta, uma por vez. Mostra o erro do servidor.
+   * Devolve true quando deu certo.
+   */
+  async function runOnTab(tabId, action) {
+    if (busy.has(tabId)) return false;
+    busy.add(tabId);
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      if (Api.hasSession()) UI.toast(e.message, { type: 'error' });
+      return false;
+    } finally {
+      busy.delete(tabId);
+    }
   }
 
-  function openClientDialog(clientId = null) {
-    editingId = clientId;
+  /* =====================================================
+     Cliente: abrir conta / editar / excluir
+     ===================================================== */
+  let editingId = null;     // conta sendo editada (null = nova)
+  let newTabId = null;      // identificador da conta que está sendo criada
+
+  function fillResponsible(selectedId) {
+    const people = Store.get().employees.filter((p) => p.active || p.id === selectedId);
+    els.clientWaiter.innerHTML = people
+      .map((p) => `<option value="${p.id}">${esc(p.name)}${p.active ? '' : ' (desativado)'}</option>`).join('');
+    els.clientWaiter.value = selectedId;
+  }
+
+  async function openClientDialog(clientId = null) {
+    if (!(await Waiter.ensure())) return;
     const client = clientId ? Store.getClient(clientId) : null;
-    els.clientDialogTitle.textContent = client ? 'Editar cliente' : 'Novo cliente';
+    if (clientId && !client) return;
+    editingId = clientId;
+    newTabId = clientId ? null : Api.newId();
+    els.clientDialogTitle.textContent = client ? 'Editar conta' : 'Novo cliente';
     els.clientName.value = client ? client.name : '';
     els.clientCpf.value = client?.cpf ? Utils.formatCPF(client.cpf) : '';
     els.clientTable.value = client?.table || '';
-    els.attendantField.hidden = !Features.attendant;
-    els.clientAttendant.value = client?.attendant || '';
-    setFieldError(els.clientName, els.nameError, '');
-    setFieldError(els.clientCpf, els.cpfError, '');
+    fillResponsible(client ? client.waiterId : Store.waiter().id);
+    UI.setFieldError(els.clientName, els.nameError, '');
+    UI.setFieldError(els.clientCpf, els.cpfError, '');
+    els.clientError.textContent = '';
     UI.Modal.open(els.clientDialog);
     els.clientName.focus();
   }
@@ -180,45 +222,47 @@
   function validateClient() {
     const name = els.clientName.value.trim();
     const cpf = Utils.onlyDigits(els.clientCpf.value);
-    let ok = true;
-
-    if (name.length < 2) {
-      setFieldError(els.clientName, els.nameError, 'Digite o nome do cliente.');
-      ok = false;
-    } else {
-      setFieldError(els.clientName, els.nameError, '');
-    }
-
+    const nameMsg = name.length < 2 ? 'Digite o nome do cliente.' : '';
     let cpfMsg = '';
     if (cpf) {
       if (cpf.length !== 11) cpfMsg = 'O CPF precisa ter 11 números.';
       else if (!Utils.isValidCPF(cpf)) cpfMsg = 'CPF inválido. Confira os números.';
       else {
-        const dup = Store.get().clients.find((c) => c.cpf === cpf && c.id !== editingId);
-        if (dup) cpfMsg = `Este CPF já está cadastrado para ${dup.name}.`;
+        const dup = Store.get().clients.find((c) => !c.closedAt && c.cpf === cpf && c.id !== editingId);
+        if (dup) cpfMsg = `Este CPF já está numa conta aberta de ${dup.name}.`;
       }
     }
-    setFieldError(els.clientCpf, els.cpfError, cpfMsg);
-    if (cpfMsg) ok = false;
-
-    return ok ? { name, cpf, table: els.clientTable.value.trim(), attendant: els.clientAttendant.value.trim() } : null;
+    UI.setFieldError(els.clientName, els.nameError, nameMsg);
+    UI.setFieldError(els.clientCpf, els.cpfError, cpfMsg);
+    if (nameMsg || cpfMsg) return null;
+    return { name, cpf, table: els.clientTable.value.trim(), responsibleId: els.clientWaiter.value };
   }
 
-  function saveClient(e) {
+  async function saveClient(e) {
     e.preventDefault();
-    const data = validateClient();
-    if (!data) {
+    const fields = validateClient();
+    if (!fields) {
       els.clientForm.querySelector('.has-error input')?.focus();
       return;
     }
-    if (editingId) {
-      Store.updateClient(editingId, data);
-      UI.toast('Cadastro atualizado', { type: 'success' });
-    } else {
-      const c = Store.addClient(data);
-      UI.toast(`${c.name} cadastrado às ${Utils.formatTime(c.createdAt)}`, { type: 'success' });
-    }
-    UI.Modal.close(els.clientDialog);
+    if (!(await Waiter.ensure())) return;
+    await UI.whileBusy(els.clientForm.querySelector('[type="submit"]'), async () => {
+      try {
+        // Sem mudança, não envia o responsável (ele pode já estar desativado)
+        if (editingId) {
+          const current = Store.getClient(editingId);
+          if (current?.waiterId === fields.responsibleId) delete fields.responsibleId;
+          await Store.updateTab(editingId, fields);
+        } else {
+          await Store.openTab(newTabId, fields);
+        }
+      } catch (err) {
+        els.clientError.textContent = err.message;
+        return;
+      }
+      UI.toast(editingId ? 'Conta atualizada' : `Conta de ${fields.name} aberta`, { type: 'success' });
+      UI.Modal.close(els.clientDialog);
+    });
   }
 
   async function deleteClient(clientId, card) {
@@ -229,33 +273,30 @@
       UI.toast('Este cliente já consumiu e não pode ser excluído.', { type: 'warning' });
       return;
     }
+    if (!(await Waiter.ensure())) return;
     const ok = await UI.confirm({
       title: `Excluir ${client.name}?`,
-      message: 'O cadastro será removido da lista.',
+      message: 'A conta será removida da lista.',
       confirmText: 'Excluir'
     });
     if (!ok) return;
-
-    await UI.animateCardOut(card);
-    const removed = Store.removeClient(clientId);
-    if (!removed) return;
-    UI.toast(`${removed.client.name} foi excluído`, {
-      type: 'info',
-      action: { label: 'Desfazer', onClick: () => Store.restoreClient(removed.client, removed.index) }
-    });
+    if (await runOnTab(clientId, () => Store.removeTab(clientId))) {
+      UI.toast(`${client.name} foi excluído`, { type: 'info' });
+    }
   }
 
   /* =====================================================
      Encerrar / reabrir conta
      ===================================================== */
   let closingId = null;
-  let closingCard = null;
+  let closingTotal = 0;       // o total que está na tela é o que vai para o servidor
+  let closingSignature = '';
 
   function billTable(bill) {
     const rows = bill.lines.map((l) => `
       <tr${l.unitCents == null ? ' class="is-missing"' : ''}>
         <td class="num">${l.qty}</td>
-        <td>${Utils.escapeHTML(l.product)}</td>
+        <td>${esc(l.product)}</td>
         <td class="num">${l.unitCents == null ? '—' : Billing.money(l.unitCents)}</td>
         <td class="num">${l.totalCents == null ? 'sem preço' : Billing.money(l.totalCents)}</td>
       </tr>`).join('');
@@ -265,22 +306,32 @@
     </table>`;
   }
 
-  /** Abre a conta com valor de cada produto, total e a escolha da forma de pagamento. */
-  function openCloseDialog(clientId, card) {
-    const client = Store.getClient(clientId);
-    if (!client || client.closedAt || !client.items.length) return;
-    closingId = clientId;
-    closingCard = card;
-
+  /** Desenha a conta. Devolve true se ela mudou desde o último desenho. */
+  function renderCloseBill(client) {
     const bill = Store.billOf(client);
-    const table = client.table ? ` · Mesa ${Utils.escapeHTML(client.table)}` : '';
-    els.closeSub.innerHTML = `<strong>${Utils.escapeHTML(client.name)}</strong>${table}`;
+    const signature = JSON.stringify(bill.lines);
+    const changed = signature !== closingSignature;
+    closingSignature = signature;
+    closingTotal = bill.totalCents;
+
+    const table = client.table ? ` · Mesa ${esc(client.table)}` : '';
+    els.closeSub.innerHTML = `<strong>${esc(client.name)}</strong>${table} · ${esc(Store.employeeName(client.waiterId))}`;
     els.closeBill.innerHTML = billTable(bill);
     els.closeTotal.textContent = Billing.money(bill.totalCents);
     els.closeWarning.hidden = !bill.missing;
     if (bill.missing) {
-      els.closeWarning.textContent = `${Utils.plural(bill.missing, 'item está', 'itens estão')} sem preço na lista e não ${bill.missing === 1 ? 'entra' : 'entram'} no total. Cadastre em "Produtos e preços" antes de encerrar para incluir.`;
+      els.closeWarning.textContent = `${Utils.plural(bill.missing, 'item está', 'itens estão')} sem preço na lista e não ${bill.missing === 1 ? 'entra' : 'entram'} no total. O gerente pode cadastrar o preço antes de encerrar.`;
     }
+    return changed;
+  }
+
+  async function openCloseDialog(clientId) {
+    if (!(await Waiter.ensure())) return;
+    const client = Store.getClient(clientId);
+    if (!client || client.closedAt || !client.items.length) return;
+    closingId = clientId;
+    closingSignature = '';
+    renderCloseBill(client);
     els.payOptions.innerHTML = Billing.METHODS.map((m) => `
       <label class="pay__opt">
         <input type="radio" name="pay" value="${m.id}">
@@ -288,6 +339,21 @@
       </label>`).join('');
     els.payError.textContent = '';
     UI.Modal.open(els.closeDialog);
+  }
+
+  /** Outro aparelho mexeu na conta enquanto ela estava sendo fechada. */
+  function syncCloseDialog() {
+    if (!els.closeDialog.open || busy.has(closingId)) return;
+    const client = Store.getClient(closingId);
+    if (!client || client.closedAt || !client.items.length) {
+      UI.Modal.close(els.closeDialog);
+      if (client?.closedAt) UI.toast(`A conta de ${client.name} foi encerrada em outro aparelho.`, { type: 'warning' });
+      return;
+    }
+    if (renderCloseBill(client)) {
+      els.payError.textContent = 'A conta mudou agora há pouco. Confira antes de encerrar.';
+      UI.shake(els.closeBill);
+    }
   }
 
   async function confirmClose(e) {
@@ -299,41 +365,54 @@
       return;
     }
     const id = closingId;
+    const total = closingTotal;
     const client = Store.getClient(id);
-    if (!client) return;
+    if (!client || !(await Waiter.ensure())) return;
 
-    UI.Modal.close(els.closeDialog);
-    await UI.animateCardOut(closingCard);
-    const closed = Store.closeClient(id, method);
-    if (!closed) return;
-    UI.toast(`${client.name}: ${Billing.money(closed.payment.totalCents)} no ${Billing.methodLabel(method)}`, {
-      type: 'success',
-      action: { label: 'Desfazer', onClick: () => Store.reopenClient(id) }
+    await UI.whileBusy(els.closeConfirm, async () => {
+      let failure = null;
+      await runOnTab(id, async () => {
+        try { await Store.closeTab(id, method, total); } catch (err) { failure = err; }
+      });
+      if (failure) {
+        els.payError.textContent = failure.message;
+        const current = Store.getClient(id);
+        if (current && !current.closedAt && current.items.length) renderCloseBill(current);
+        else syncCloseDialog();
+        return;
+      }
+      UI.Modal.close(els.closeDialog);
+      UI.toast(`${client.name}: ${Billing.money(total)} no ${Billing.methodLabel(method)}`, {
+        type: 'success',
+        action: { label: 'Desfazer', onClick: () => reopenClient(id) }
+      });
     });
   }
 
-  async function reopenClient(clientId, card) {
-    const client = Store.getClient(clientId);
-    if (!client) return;
-    await UI.animateCardOut(card);
-    Store.reopenClient(clientId);
-    UI.toast(`Conta de ${client.name} reaberta`, { type: 'info' });
+  async function reopenClient(clientId) {
+    if (!(await Waiter.ensure())) return;
+    const name = Store.getClient(clientId)?.name || '';
+    if (await runOnTab(clientId, () => Store.reopenTab(clientId))) {
+      UI.toast(`Conta de ${name} reaberta`, { type: 'info' });
+    }
   }
 
   /* =====================================================
      Consumo
      ===================================================== */
+  let itemClientId = null;    // conta que está recebendo consumo
+  let pendingOrder = null;    // o mesmo pedido reenviado leva o mesmo identificador
+
   function renderCurrentItems() {
     const client = Store.getClient(itemClientId);
-    if (!client || !client.items.length) {
-      els.itemCurrent.hidden = true;
-      return;
-    }
-    els.itemCurrent.hidden = false;
+    els.itemCurrent.hidden = !client?.items.length;
+    if (els.itemCurrent.hidden) return;
     els.itemCurrent.innerHTML = '<strong>Já pediu</strong>' + client.items
-      .map((i) => `<span>${i.qty}</span> ${Utils.escapeHTML(i.product)}`)
+      .map((i) => `<span>${i.qty}</span> ${esc(i.product)}`)
       .join(' &nbsp;·&nbsp; ');
   }
+
+  const renderItemWaiter = () => { els.itemWaiter.textContent = Store.waiter()?.name || '—'; };
 
   /* ---------- Sugestões da lista de produtos ---------- */
   let suggestIndex = -1;
@@ -363,10 +442,10 @@
     let msg = '';
     let warn = false;
     if (!Store.products().length) {
-      msg = 'Nenhum produto cadastrado ainda. Cadastre em "Produtos e preços" para a conta sair com valores.';
+      msg = 'Nenhum produto cadastrado ainda. O gerente cadastra em Gerência, para a conta sair com valores.';
     } else if (text) {
       const exact = Billing.findProduct(Store.products(), text);
-      if (exact) msg = `${Billing.money(Billing.toCents(exact.price))} cada`;
+      if (exact) msg = `${Billing.money(exact.priceCents)} cada`;
       else { msg = 'Fora da lista: este item vai ficar sem preço na conta.'; warn = true; }
     }
     els.productHint.hidden = !msg;
@@ -390,8 +469,8 @@
     } else {
       els.productSuggest.innerHTML = suggestMatches.map((p, i) => `
         <li class="suggest__item" role="option" data-index="${i}">
-          <span>${Utils.escapeHTML(p.name)}</span>
-          <strong>${Billing.money(Billing.toCents(p.price))}</strong>
+          <span>${esc(p.name)}</span>
+          <strong>${Billing.money(p.priceCents)}</strong>
         </li>`).join('');
       els.productSuggest.hidden = false;
       els.itemProduct.setAttribute('aria-expanded', 'true');
@@ -404,22 +483,25 @@
     const p = suggestMatches[index];
     if (!p) return;
     els.itemProduct.value = p.name;
-    setFieldError(els.itemProduct, els.productError, '');
+    UI.setFieldError(els.itemProduct, els.productError, '');
     hideSuggestions();
     updateProductHint();
     els.itemQty.focus();
     els.itemQty.select();
   }
 
-  function openItemDialog(clientId) {
+  async function openItemDialog(clientId) {
+    if (!(await Waiter.ensure())) return;
     const client = Store.getClient(clientId);
-    if (!client) return;
+    if (!client || client.closedAt) return;
     itemClientId = clientId;
-    const table = client.table ? ` · Mesa ${Utils.escapeHTML(client.table)}` : '';
-    els.itemDialogClient.innerHTML = `para <strong>${Utils.escapeHTML(client.name)}</strong>${table}`;
+    pendingOrder = null;
+    const table = client.table ? ` · Mesa ${esc(client.table)}` : '';
+    els.itemDialogClient.innerHTML = `para <strong>${esc(client.name)}</strong>${table}`;
+    renderItemWaiter();
     els.itemProduct.value = '';
     els.itemQty.value = 1;
-    setFieldError(els.itemProduct, els.productError, '');
+    UI.setFieldError(els.itemProduct, els.productError, '');
     hideSuggestions();
     updateProductHint();
     renderCurrentItems();
@@ -436,21 +518,40 @@
     els.itemQty.value = Math.min(999, Math.max(1, readQty() + delta));
   }
 
-  /** Grava o item. Se `keepOpen`, limpa o campo para lançar outro produto. */
-  function saveItem(keepOpen) {
+  let savingItem = false;
+
+  /** Grava o pedido. Se `keepOpen`, limpa o campo para lançar outro produto. */
+  async function saveItem(keepOpen) {
+    if (savingItem) return;
     const product = els.itemProduct.value.trim();
-    if (!product) {
-      setFieldError(els.itemProduct, els.productError, 'Digite o que o cliente pediu.');
+    if (product.length < 2) {
+      UI.setFieldError(els.itemProduct, els.productError, 'Digite o que o cliente pediu.');
       els.itemProduct.focus();
       return;
     }
-    setFieldError(els.itemProduct, els.productError, '');
+    if (!(await Waiter.ensure())) return;
+    UI.setFieldError(els.itemProduct, els.productError, '');
     const qty = readQty();
-    const item = Store.addItem(itemClientId, product, qty);
-    if (!item) return;
+    const tabId = itemClientId;
+    const key = JSON.stringify([tabId, product, qty]);
+    if (pendingOrder?.key !== key) pendingOrder = { key, id: Api.newId() };
 
-    const name = Store.getClient(itemClientId)?.name || '';
-    UI.toast(`+${qty} ${item.product} para ${name}`, { type: 'success', duration: 2200 });
+    const buttons = els.itemForm.querySelectorAll('[type="submit"], #btnItemAnother');
+    savingItem = true;
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      await Store.addOrder(tabId, pendingOrder.id, product, qty);
+    } catch (e) {
+      // A janela fica aberta com o pedido, para tentar de novo
+      UI.setFieldError(els.itemProduct, els.productError, e.message);
+      return;
+    } finally {
+      savingItem = false;
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+
+    pendingOrder = null;
+    UI.toast(`+${qty} ${product} para ${Store.getClient(tabId)?.name || ''}`, { type: 'success', duration: 2200 });
 
     if (keepOpen) {
       els.itemProduct.value = '';
@@ -464,82 +565,64 @@
     }
   }
 
-  function changeQty(clientId, itemId, delta) {
-    const result = Store.changeQty(clientId, itemId, delta);
-    if (result?.removed) {
-      UI.toast(`${result.removed.product} removido`, {
-        type: 'info',
-        action: { label: 'Desfazer', onClick: () => Store.restoreItem(clientId, result.removed, result.index, result.lastOrder) }
+  /** + lança mais um agora. − cancela uma unidade do pedido mais recente. */
+  async function changeQty(clientId, itemKey, delta) {
+    if (!(await Waiter.ensure())) return;
+    const client = Store.getClient(clientId);
+    const item = client?.items.find((i) => i.key === itemKey);
+    if (!item || busy.has(clientId)) return;
+
+    if (delta > 0) {
+      await runOnTab(clientId, () => Store.addOrder(clientId, Api.newId(), item.product, 1));
+      return;
+    }
+    if (item.qty === 1) {
+      const ok = await UI.confirm({
+        title: `Tirar ${item.product}?`,
+        message: `É a última unidade na conta de ${client.name}. O cancelamento fica registrado no seu nome.`,
+        confirmText: 'Tirar'
       });
+      if (!ok) return;
+    }
+    const order = item.orders[item.orders.length - 1];
+    if (await runOnTab(clientId, () => Store.cancelUnit(clientId, order.id))) {
+      UI.toast(`1 ${item.product} cancelado`, { type: 'info', duration: 2200 });
     }
   }
 
   /* =====================================================
-     Api
+     Entrar e sair
      ===================================================== */
-  // Faixa de aviso: só aparece se algo der errado; com o servidor ligado, nada é mostrado
-  const bannerTexts = {
-    offline: 'Sem conexão com o servidor. Se ele estiver acordando, aguarde alguns segundos. Nada se perde: o que você lançar fica neste aparelho e é enviado quando voltar.'
-  };
-
-  function onStatusChange(status) {
-    const banner = bannerTexts[status];
-    els.dbBanner.hidden = !banner;
-    if (banner) els.dbBannerText.textContent = banner;
-
-    // Sem login, o conteúdo fica escondido atrás da janela de entrada
-    document.body.classList.toggle('is-locked', status === 'login');
-    if (status === 'login') openLogin();
-    els.btnLogout.hidden = !(Api.isAuthRequired() && Api.hasSession() && status !== 'login');
-    els.btnLogout.dataset.tip = `Sair (${Api.user()})`;
-    if (status === 'connected' || status === 'local') applyRole();
-  }
-
-  /**
-   * Esconde da tela o que a função não pode usar. É só conforto: quem confere
-   * de verdade é o servidor (server/server.js), com as mesmas regras de roles.js.
-   */
-  function applyRole() {
-    const role = Api.role();
-    els.btnAccess.hidden = Api.isLocal() || !Roles.can(role, 'accounts.panel');
-    document.querySelectorAll('[data-menu="backup"], [data-menu="restore"]')
-      .forEach((item) => { item.hidden = !Roles.can(role, 'backup'); });
-    checkAlerts();
-  }
-
-  /** Faixa amarela para ADMIN e admin: senha padrão ainda em uso e banco que não é permanente. */
-  async function checkAlerts() {
-    if (Api.isLocal() || !Roles.can(Api.role(), 'accounts.panel') || !Api.hasSession()) {
-      els.passBanner.hidden = true;
-      return;
-    }
-    try {
-      const { contas, banco } = await Api.accounts();
-      const messages = [];
-      const defaults = contas.filter((c) => c.senhaPadrao).map((c) => c.login);
-      if (defaults.length) {
-        messages.push(`A senha padrão (${Roles.SENHA_PADRAO}) ainda está em uso em: ${defaults.join(', ')}. Troque agora.`);
-      }
-      if (banco === 'arquivo' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
-        messages.push('O banco permanente (Neon) não está conectado: os dados somem quando o servidor reinicia.');
-      }
-      els.passBanner.hidden = !messages.length;
-      els.passBannerText.textContent = messages.join(' ');
-    } catch {
-      els.passBanner.hidden = true;
-    }
-  }
-
-  /* ---------- Login ---------- */
-  function openLogin() {
-    if (els.loginDialog.open) return;
+  function openLogin(message = '') {
+    document.body.classList.add('is-locked');
+    // Fecha o que estiver aberto, para nada ficar visível depois de sair
+    document.querySelectorAll('dialog[open]').forEach((d) => { if (d !== els.loginDialog) d.close(); });
     els.loginPass.value = '';
     els.loginPass.type = 'password';
     $('#loginToggle').textContent = 'Mostrar';
-    els.loginError.textContent = '';
-    els.loginUser.value = Api.user();
+    els.loginError.textContent = message;
+    try { els.loginUser.value = localStorage.getItem(LAST_LOGIN_KEY) || ''; } catch { /* ignora */ }
     UI.Modal.open(els.loginDialog);
     (els.loginUser.value ? els.loginPass : els.loginUser).focus();
+  }
+
+  function enter() {
+    document.body.classList.remove('is-locked');
+    els.dbBanner.hidden = true;
+    UI.reset();
+    render();
+    Store.start();
+    requestAnimationFrame(() => UI.moveThumb(els.filterGroup));
+  }
+
+  function leave(message) {
+    Api.logout();
+    Store.stop();
+    waiterFilter = '';
+    query = '';
+    els.search.value = '';
+    els.list.innerHTML = '';
+    openLogin(message);
   }
 
   async function submitLogin(e) {
@@ -554,11 +637,11 @@
     els.loginSubmit.disabled = true;
     els.loginSubmit.textContent = 'Entrando…';
     try {
-      const remote = await Api.login(usuario, senha);
+      await Api.login(usuario, senha);
+      try { localStorage.setItem(LAST_LOGIN_KEY, usuario); } catch { /* ignora */ }
       els.loginPass.value = '';
       UI.Modal.close(els.loginDialog);
-      syncWithVault(remote, true);
-      applyRole();
+      enter();
     } catch (err) {
       els.loginError.textContent = err.message;
       UI.shake(els.loginForm.querySelector('.modal__body'));
@@ -570,316 +653,107 @@
     }
   }
 
-  /** Lista sem nenhum cliente nem produto (ex.: servidor que acabou de ser reiniciado). */
-  const isEmptyState = (state) => !state.clients.length && !(state.products || []).length;
-
-  /**
-   * Decide quem vale: os dados deste aparelho ou os do servidor.
-   * - Servidor vazio (reiniciou) + dados no aparelho: devolve os dados ao servidor.
-   * - Aparelho zerado + dados no servidor: traz os dados do servidor.
-   * - Os dois com dados: vale o mais recente.
-   */
-  function syncWithVault(remote, silent = false) {
-    const local = Store.get();
-    const remoteHasData = Store.isValidState(remote) && !isEmptyState(remote);
-
-    if (remoteHasData && (local.pristine || remote.updatedAt >= local.updatedAt)) {
-      if (remote.updatedAt === local.updatedAt) return;
-      UI.resetSeen();
-      Store.replace(remote);
-      if (!silent) UI.toast(`Dados carregados do servidor (${Utils.plural(remote.clients.length, 'cliente', 'clientes')})`, { type: 'success' });
-    } else if (!local.pristine) {
-      Api.saveNow(local);
-    }
-  }
-
   /* =====================================================
-     Exportar planilha do Excel com tudo de cada cliente
+     Filtro segmentado
      ===================================================== */
-  function exportExcel() {
-    const state = Store.get();
-    if (!state.clients.length) {
-      UI.toast('Ainda não há clientes para exportar.', { type: 'warning' });
-      return;
-    }
-    // Ex.: "Comanda 2026-11-02 23h40.xlsx"
-    const now = new Date().toISOString();
-    const stamp = `${Markdown.dayKey(now)} ${Utils.formatTime(now).slice(0, 5).replace(':', 'h')}`;
-    downloadFile(Excel.build(state), `Comanda ${stamp}.xlsx`, Excel.MIME);
-    UI.toast('Planilha baixada', { type: 'success' });
-  }
-
-  /* =====================================================
-     Backup e restauração (os dados ficam no aparelho)
-     ===================================================== */
-  const LAST_BACKUP_KEY = 'comanda:ultimoBackup';
-
-  function downloadFile(content, name, type) {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function renderLastBackup() {
-    let last = null;
-    try { last = localStorage.getItem(LAST_BACKUP_KEY); } catch { /* ignora */ }
-    $('#lastBackupLabel').textContent = last ? `Último: ${Utils.formatFull(last).slice(0, -3)}` : 'Nunca feito';
-  }
-
-  function exportBackup() {
-    const now = new Date().toISOString();
-    const stamp = `${Markdown.dayKey(now)} ${Utils.formatTime(now).slice(0, 5).replace(':', 'h')}`;
-    downloadFile(JSON.stringify(Store.backup(), null, 2), `Comanda backup ${stamp}.json`, 'application/json');
-    try { localStorage.setItem(LAST_BACKUP_KEY, now); } catch { /* ignora */ }
-    renderLastBackup();
-    UI.toast('Backup salvo. Guarde o arquivo em um lugar seguro.', { type: 'success', duration: 5000 });
-  }
-
-  async function restoreBackup(file) {
-    let data = null;
-    try { data = JSON.parse(await file.text()); } catch { /* arquivo inválido */ }
-    if (!data || data.app !== 'comanda' || !Store.isValidState(data.estado)) {
-      UI.toast('Esse arquivo não é um backup da Comanda.', { type: 'error' });
-      return;
-    }
-    const when = data.exportedAt ? Utils.formatFull(data.exportedAt).slice(0, -3) : 'data desconhecida';
-    const ok = await UI.confirm({
-      title: 'Restaurar este backup?',
-      message: `Backup de ${when}, com ${Utils.plural(data.estado.clients.length, 'cliente', 'clientes')}. Os dados atuais deste aparelho serão substituídos.`,
-      confirmText: 'Restaurar',
-      tone: 'primary',
-      icon: 'refresh'
-    });
-    if (!ok) return;
-    UI.resetSeen();
-    Store.restore(data);
-    UI.toast('Backup restaurado', { type: 'success' });
-  }
-
-  function bindExportMenu() {
-    const btn = $('#btnExport');
-    const menu = $('#exportMenu');
-    const input = $('#restoreInput');
-
-    const setOpen = (open) => {
-      menu.hidden = !open;
-      btn.setAttribute('aria-expanded', String(open));
-      btn.classList.toggle('is-open', open);
-      if (open) renderLastBackup();
-    };
-
-    btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(menu.hidden); });
-    document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.menu-wrap')) setOpen(false); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) setOpen(false); });
-
-    menu.addEventListener('click', (e) => {
-      const item = e.target.closest('[data-menu]');
-      if (!item) return;
-      setOpen(false);
-      if (item.dataset.menu === 'excel') exportExcel();
-      if (item.dataset.menu === 'backup') exportBackup();
-      if (item.dataset.menu === 'restore') input.click();
-    });
-
-    input.addEventListener('change', () => {
-      const file = input.files[0];
-      input.value = '';
-      if (file) restoreBackup(file);
-    });
-  }
-
-  /* =====================================================
-     Filtro segmentado (pílula deslizante)
-     ===================================================== */
-  function moveThumb(group) {
-    const active = group.querySelector('.is-active');
-    const thumb = group.querySelector('.segmented__thumb');
-    if (!active || !thumb) return;
-    thumb.style.width = `${active.offsetWidth}px`;
-    thumb.style.height = `${active.offsetHeight}px`;
-    thumb.style.top = '0';
-    // Posição em X e Y, pois no celular as abas ficam em 2 linhas
-    thumb.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
-  }
-
-  const moveFilterThumb = () => moveThumb(els.filterGroup);
-
   /** Troca o filtro e deixa as abas e os cards do resumo marcados juntos. */
   function setFilter(next, { scroll = false } = {}) {
     filter = next;
     els.filterGroup.querySelectorAll('[data-filter]').forEach((b) => b.classList.toggle('is-active', b.dataset.filter === next));
     els.statsGroup.querySelectorAll('[data-filter]').forEach((b) => b.classList.toggle('is-active', b.dataset.filter === next));
-    moveFilterThumb();
+    UI.moveThumb(els.filterGroup);
     render();
     if (scroll) els.filterGroup.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   /* =====================================================
      Janela "Itens pedidos"
+     Só quantidades: o faturamento é assunto da gerência.
      ===================================================== */
   let itemsView = 'product';
 
-  /** Todos os pedidos de todos os clientes, com quem pediu e quando. */
+  /** Todos os pedidos na tela, com quem pediu, quando e quem lançou. */
   function allOrders() {
-    const orders = [];
-    Store.get().clients.forEach((c) => {
-      // Valor unitário de cada produto da conta (encerrada: o guardado no pagamento; aberta: a lista atual)
-      const lines = Store.billOf(c).lines;
-      c.items.forEach((item, i) => {
-        const unit = lines[i] ? lines[i].unitCents : null;
-        item.orders.forEach((o) => {
-          orders.push({
-            at: o.at, qty: o.qty, product: item.product, client: c,
-            cents: unit == null ? null : unit * o.qty
-          });
-        });
-      });
-    });
-    return orders.sort((a, b) => a.at.localeCompare(b.at));
-  }
-
-  /** Valor de um pedido ou de um grupo: soma o que tem preço e avisa quando falta preço. */
-  function moneyCell(cents, missing = 0) {
-    if (cents == null) return '<span class="report__money is-missing">sem preço</span>';
-    const warn = missing ? ` <small class="report__money-warn">+ ${missing} sem preço</small>` : '';
-    return `<span class="report__money">${Billing.money(cents)}${warn}</span>`;
+    return Store.get().clients
+      .flatMap((c) => c.items.flatMap((item) => item.orders.map((o) => ({
+        at: o.at, qty: o.qty, key: item.key, product: item.product, waiterId: o.waiterId, client: c
+      }))))
+      .sort((a, b) => a.at.localeCompare(b.at));
   }
 
   function clientTag(client) {
     const closed = client.closedAt ? ' <span class="tag tag--done">encerrada</span>' : '';
-    const table = client.table ? ` · Mesa ${Utils.escapeHTML(client.table)}` : '';
-    return `<span class="report__client" style="--hue:${Utils.hue(client.name)}">${Utils.escapeHTML(client.name)}${table}</span>${closed}`;
+    const table = client.table ? ` · Mesa ${esc(client.table)}` : '';
+    return `<span class="report__client" style="--hue:${Utils.hue(client.name)}">${esc(client.name)}${table}</span>${closed}`;
   }
 
-  function renderItemsReport() {
-    const orders = allOrders();
-    const total = orders.reduce((s, o) => s + o.qty, 0);
-    const money = orders.reduce((s, o) => s + (o.cents || 0), 0);
-    const anyPriced = orders.some((o) => o.cents != null);
-    els.itemsDialogSub.textContent = `${Utils.plural(total, 'item', 'itens')} em ${Utils.plural(orders.length, 'pedido', 'pedidos')}${anyPriced ? ` · ${Billing.money(money)}` : ''}`;
+  const waiterTag = (id) => `<span class="report__waiter">${Icons.svg('user')} ${esc(Store.employeeName(id))}</span>`;
 
-    if (!orders.length) {
-      els.itemsReport.innerHTML = '<p class="item-empty">Nenhum item pedido ainda.</p>';
-      return;
-    }
+  let shownReport = '';
+
+  function itemsReportHtml(orders) {
+    if (!orders.length) return '<p class="item-empty">Nenhum item pedido ainda.</p>';
 
     if (itemsView === 'time') {
-      els.itemsReport.innerHTML = `<ul class="report-list">${orders.slice().reverse().map((o) => `
+      return `<ul class="report-list">${orders.slice().reverse().map((o) => `
         <li class="report-row">
           <span class="report__time">${Utils.formatWhen(o.at)}</span>
           <span class="item__qty">${o.qty}</span>
-          <span class="report__main"><strong>${Utils.escapeHTML(o.product)}</strong>${clientTag(o.client)}</span>
-          ${moneyCell(o.cents)}
+          <span class="report__main"><strong>${esc(o.product)}</strong>${clientTag(o.client)}</span>
+          ${waiterTag(o.waiterId)}
         </li>`).join('')}</ul>`;
-      return;
     }
 
     // Por produto: total de cada um e, embaixo, quem pediu e quando
-    const groups = {};
+    const groups = new Map();
     orders.forEach((o) => {
-      const key = o.product.toLowerCase();
-      (groups[key] ||= { name: o.product, qty: 0, cents: 0, priced: false, missing: 0, orders: [] });
-      groups[key].qty += o.qty;
-      if (o.cents == null) groups[key].missing += 1;
-      else { groups[key].cents += o.cents; groups[key].priced = true; }
-      groups[key].orders.push(o);
+      if (!groups.has(o.key)) groups.set(o.key, { name: o.product, qty: 0, orders: [] });
+      const g = groups.get(o.key);
+      g.qty += o.qty;
+      g.orders.push(o);
     });
-    els.itemsReport.innerHTML = Object.values(groups)
+    return [...groups.values()]
       .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name, 'pt-BR'))
       .map((g) => `
-        <details class="report-group">
+        <details class="report-group" data-name="${esc(g.name)}">
           <summary>
             <span class="item__qty">${g.qty}</span>
-            <strong>${Utils.escapeHTML(g.name)}</strong>
+            <strong>${esc(g.name)}</strong>
             <span class="report__count">${Utils.plural(g.orders.length, 'pedido', 'pedidos')}</span>
-            ${moneyCell(g.priced ? g.cents : null, g.priced ? g.missing : 0)}
           </summary>
           <ul class="report-list">${g.orders.map((o) => `
             <li class="report-row">
               <span class="report__time">${Utils.formatWhen(o.at)}</span>
               <span class="report__qty">${o.qty}×</span>
               <span class="report__main">${clientTag(o.client)}</span>
-              ${moneyCell(o.cents)}
+              ${waiterTag(o.waiterId)}
             </li>`).join('')}</ul>
         </details>`).join('');
   }
 
-  /* =====================================================
-     Métricas
-     ===================================================== */
-  let metricsPeriod = 'today';
-
-  const METRICS_REFRESH_MS = 60000;
-  let metricsTimer = null;
-
-  /**
-   * `animate` só ao abrir ou trocar o período. Nas atualizações automáticas
-   * os números mudam sem as animações de entrada, para a tela não "piscar".
-   */
-  function renderMetrics({ animate = false } = {}) {
-    els.metricsTooltip.hidden = true;
-    els.metricsContent.classList.toggle('mx-static', !animate);
-    const { subtitle } = Metrics.render(els.metricsContent, Store.get(), metricsPeriod);
-    els.metricsSub.textContent = subtitle;
-  }
-
-  function openMetrics() {
-    renderMetrics({ animate: true });
-    UI.Modal.open(els.metricsDialog);
-    // Enquanto o painel estiver aberto, atualiza a cada 1 minuto
-    clearInterval(metricsTimer);
-    metricsTimer = setInterval(() => {
-      if (els.metricsDialog.open) renderMetrics();
-      else clearInterval(metricsTimer);
-    }, METRICS_REFRESH_MS);
-  }
-
-  /** Dica flutuante dos gráficos (lê o texto de data-viz-tip). */
-  function bindMetricsTooltip() {
-    const tip = els.metricsTooltip;
-    const card = els.metricsDialog.querySelector('.modal__card');
-    const show = (target, x, y) => {
-      tip.textContent = target.dataset.vizTip;
-      tip.hidden = false;
-      const box = card.getBoundingClientRect();
-      const w = tip.offsetWidth;
-      const left = Math.min(Math.max(x - box.left - w / 2, 8), box.width - w - 8);
-      tip.style.left = `${left}px`;
-      tip.style.top = `${y - box.top - tip.offsetHeight - 12}px`;
-    };
-    els.metricsContent.addEventListener('pointermove', (e) => {
-      const target = e.target.closest('[data-viz-tip]');
-      if (target) show(target, e.clientX, e.clientY);
-      else tip.hidden = true;
-    });
-    els.metricsContent.addEventListener('pointerleave', () => { tip.hidden = true; });
-    els.metricsDialog.querySelector('.modal__body').addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
-    // No celular: tocar mostra a dica
-    els.metricsContent.addEventListener('click', (e) => {
-      const target = e.target.closest('[data-viz-tip]');
-      if (!target) return;
-      const r = target.getBoundingClientRect();
-      show(target, r.left + r.width / 2, r.top);
-    });
+  function renderItemsReport() {
+    const orders = allOrders();
+    const total = orders.reduce((s, o) => s + o.qty, 0);
+    els.itemsDialogSub.textContent = `${Utils.plural(total, 'item', 'itens')} em ${Utils.plural(orders.length, 'pedido', 'pedidos')} · contas abertas e encerradas nas últimas 24 horas`;
+    const html = itemsReportHtml(orders);
+    if (html === shownReport) return;
+    const opened = new Set([...els.itemsReport.querySelectorAll('details[open]')].map((d) => d.dataset.name));
+    els.itemsReport.innerHTML = html;
+    els.itemsReport.querySelectorAll('details').forEach((d) => { d.open = opened.has(d.dataset.name); });
+    shownReport = html;
   }
 
   function openItemsDialog() {
     renderItemsReport();
     UI.Modal.open(els.itemsDialog);
-    requestAnimationFrame(() => moveThumb(els.itemsViewGroup));
+    requestAnimationFrame(() => UI.moveThumb(els.itemsViewGroup));
   }
 
   /* =====================================================
      Eventos
      ===================================================== */
   function bindEvents() {
-    UI.Modal.bind(els.clientDialog);
-    UI.Modal.bind(els.itemDialog);
+    [els.clientDialog, els.itemDialog, els.itemsDialog, els.closeDialog].forEach(UI.Modal.bind);
 
     // Novo cliente
     ['#btnAddClient', '#btnEmptyAdd', '#fabAdd'].forEach((sel) =>
@@ -889,10 +763,10 @@
     els.clientForm.addEventListener('submit', saveClient);
     els.clientCpf.addEventListener('input', () => {
       els.clientCpf.value = Utils.formatCPF(els.clientCpf.value);
-      if (els.cpfError.textContent) setFieldError(els.clientCpf, els.cpfError, '');
+      if (els.cpfError.textContent) UI.setFieldError(els.clientCpf, els.cpfError, '');
     });
     els.clientName.addEventListener('input', () => {
-      if (els.nameError.textContent) setFieldError(els.clientName, els.nameError, '');
+      if (els.nameError.textContent) UI.setFieldError(els.clientName, els.nameError, '');
     });
 
     // Ações dentro dos cards (delegação de eventos)
@@ -901,27 +775,28 @@
       if (!btn) return;
       const card = btn.closest('.client-card');
       const clientId = card.dataset.id;
-      const itemId = btn.closest('.item')?.dataset.itemId;
+      const itemKey = btn.closest('.item')?.dataset.itemKey;
 
       switch (btn.dataset.action) {
         case 'add-item': openItemDialog(clientId); break;
         case 'edit': openClientDialog(clientId); break;
         case 'delete': deleteClient(clientId, card); break;
-        case 'close': openCloseDialog(clientId, card); break;
-        case 'reopen': reopenClient(clientId, card); break;
-        case 'inc': changeQty(clientId, itemId, 1); break;
-        case 'dec': changeQty(clientId, itemId, -1); break;
+        case 'close': openCloseDialog(clientId); break;
+        case 'reopen': reopenClient(clientId); break;
+        case 'inc': changeQty(clientId, itemKey, 1); break;
+        case 'dec': changeQty(clientId, itemKey, -1); break;
       }
     });
 
     // Formulário de consumo
     els.itemForm.addEventListener('submit', (e) => { e.preventDefault(); saveItem(false); });
     $('#btnItemAnother').addEventListener('click', () => saveItem(true));
+    $('#itemWaiterChange').addEventListener('click', () => { Waiter.choose(); });
     els.itemForm.querySelectorAll('[data-step]').forEach((btn) =>
       btn.addEventListener('click', () => stepQty(Number(btn.dataset.step))));
     els.itemQty.addEventListener('blur', () => { els.itemQty.value = readQty(); });
     els.itemProduct.addEventListener('input', () => {
-      if (els.productError.textContent) setFieldError(els.itemProduct, els.productError, '');
+      if (els.productError.textContent) UI.setFieldError(els.itemProduct, els.productError, '');
       renderSuggestions();
     });
     els.itemProduct.addEventListener('keydown', (e) => {
@@ -948,11 +823,16 @@
       if (item) chooseSuggestion(Number(item.dataset.index));
     });
 
-    // Busca e filtro
+    // Busca e filtros
     els.search.addEventListener('input', Utils.debounce(() => {
       query = els.search.value;
       render();
     }, 120));
+    els.waiterFilter.addEventListener('change', async () => {
+      waiterFilter = els.waiterFilter.value;
+      if (waiterFilter === 'mine' && !(await Waiter.ensure())) waiterFilter = els.waiterFilter.value = '';
+      render();
+    });
     els.filterGroup.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-filter]');
       if (!btn || btn.classList.contains('is-active')) return;
@@ -966,19 +846,22 @@
       if (card.dataset.open === 'items') openItemsDialog();
       else setFilter(card.dataset.filter, { scroll: true });
     });
-
-    UI.Modal.bind(els.itemsDialog);
+    els.itemsViewGroup.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-view]');
+      if (!btn || btn.classList.contains('is-active')) return;
+      els.itemsViewGroup.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      itemsView = btn.dataset.view;
+      UI.moveThumb(els.itemsViewGroup);
+      renderItemsReport();
+    });
 
     // Fechar conta
-    UI.Modal.bind(els.closeDialog);
     els.closeForm.addEventListener('submit', confirmClose);
     els.payOptions.addEventListener('change', () => { els.payError.textContent = ''; });
 
-    // Produtos e preços, login e sair
-    $('#btnProducts').addEventListener('click', () => Products.open());
-    els.btnAccess.addEventListener('click', () => Accounts.open());
-    $('#passBannerBtn').addEventListener('click', () => Accounts.open());
-    Accounts.onChange(checkAlerts);
+    // Preços, gerência, entrar e sair
+    $('#btnPrices').addEventListener('click', () => Prices.open());
+    $('#btnManage').addEventListener('click', () => Manage.open());
     els.loginForm.addEventListener('submit', submitLogin);
     $('#loginToggle').addEventListener('click', (e) => {
       const show = els.loginPass.type === 'password';
@@ -987,50 +870,32 @@
       els.loginPass.focus();
     });
     els.loginDialog.addEventListener('cancel', (e) => e.preventDefault());   // sem senha, não fecha
+    // O navegador deixa fechar no segundo Esc: reabre
+    els.loginDialog.addEventListener('close', () => { if (!Api.hasSession()) els.loginDialog.showModal(); });
     els.loginForm.addEventListener('input', () => { els.loginError.textContent = ''; });
-    els.btnLogout.addEventListener('click', async () => {
+    $('#btnLogout').addEventListener('click', async () => {
       const ok = await UI.confirm({
-        title: 'Sair da Comanda?',
-        message: 'Você vai precisar entrar de novo com usuário e senha.',
+        title: 'Sair deste aparelho?',
+        message: 'Para voltar, será preciso o usuário e a senha do estabelecimento.',
         confirmText: 'Sair',
         tone: 'primary',
         icon: 'unlink'
       });
-      if (ok) Api.logout();
+      if (ok) leave('');
     });
 
-    // Métricas
-    UI.Modal.bind(els.metricsDialog);
-    $('#btnMetrics').addEventListener('click', openMetrics);
-    els.metricsPeriod.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-period]');
-      if (!btn || btn.classList.contains('is-active')) return;
-      els.metricsPeriod.querySelectorAll('[data-period]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      metricsPeriod = btn.dataset.period;
-      renderMetrics({ animate: true });
-    });
-    bindMetricsTooltip();
-    els.itemsViewGroup.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-view]');
-      if (!btn || btn.classList.contains('is-active')) return;
-      els.itemsViewGroup.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      itemsView = btn.dataset.view;
-      moveThumb(els.itemsViewGroup);
-      renderItemsReport();
-    });
-    window.addEventListener('resize', Utils.debounce(moveFilterThumb, 100));
+    window.addEventListener('resize', Utils.debounce(() => UI.moveThumb(els.filterGroup), 100));
 
     // Barra superior
     $('#btnTheme').addEventListener('click', (e) => {
       const r = e.currentTarget.getBoundingClientRect();
       Theme.toggle({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
     });
-    bindExportMenu();
 
     // Atalhos: N = novo cliente, / = buscar, Esc limpa a busca
     document.addEventListener('keydown', (e) => {
       if (document.querySelector('dialog[open]')) return;
-      const typing = e.target.closest('input, textarea, [contenteditable]');
+      const typing = e.target.closest('input, textarea, select, [contenteditable]');
       if (e.key === 'Escape' && e.target === els.search && els.search.value) {
         els.search.value = '';
         query = '';
@@ -1042,49 +907,40 @@
       if (e.key === '/') { e.preventDefault(); els.search.focus(); }
     });
 
-    // Outra aba alterou os dados
-    window.addEventListener('storage', (e) => {
-      if (e.key === Store.STORAGE_KEY) Store.reloadFromStorage();
-    });
+    // Ao voltar para a tela, atualiza na hora
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) Store.refresh(); });
+
+    // Outra aba entrou, saiu ou trocou a sessão
+    window.addEventListener('storage', (e) => { if (e.key === 'comanda:sessao') location.reload(); });
   }
 
   /* =====================================================
      Início
      ===================================================== */
-  Store.subscribe((state, reason) => {
-    render(reason);
+  Store.subscribe(() => {
+    render();
     if (els.itemsDialog.open) renderItemsReport();
-    if (els.metricsDialog.open) renderMetrics();
-    if (reason.type !== 'replace') Api.scheduleSave(state);
+    if (els.itemDialog.open) {
+      renderCurrentItems();
+      renderItemWaiter();
+      const client = Store.getClient(itemClientId);
+      if (Store.isLoaded() && (!client || client.closedAt) && !savingItem) {
+        UI.Modal.close(els.itemDialog);
+        UI.toast('Essa conta foi encerrada ou excluída em outro aparelho.', { type: 'warning' });
+      }
+    }
+    syncCloseDialog();
   });
 
-  Api.onStatus(onStatusChange);
-  Api.onReconnect((remote) => syncWithVault(remote, true));
+  Api.on('expired', (message) => leave(message));
+  Api.on('network', (online) => { els.dbBanner.hidden = online || !Api.hasSession(); });
 
   bindEvents();
   render();
-  requestAnimationFrame(moveFilterThumb);
 
   // Atualiza o "há X min" e a data do topo a cada 30 segundos
-  // (as métricas têm o próprio temporizador, de 1 minuto)
-  setInterval(() => render(), 30000);
+  setInterval(render, 30000);
 
-  Api.init().then((remote) => {
-    // Banco vazio na primeira vez: syncWithVault grava o que já existir no navegador
-    if (Api.isConnected()) syncWithVault(remote, true);
-  });
-
-  // Pede ao navegador para não apagar os dados sozinho (importante no tablet)
-  navigator.storage?.persist?.().catch(() => {});
-
-  // App instalável e funcionando sem internet (só em http/https)
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker não registrado', e));
-  }
-
-  // Garante o envio da última alteração ao fechar a aba
-  window.addEventListener('pagehide', () => Api.flushOnExit());
-  window.addEventListener('beforeunload', (e) => {
-    if (Api.hasPending()) { Api.flushOnExit(); e.preventDefault(); }
-  });
+  if (Api.hasSession()) enter();
+  else openLogin();
 })();

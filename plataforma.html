@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Comanda · Painel da plataforma</title>
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/theme.css">
+  <link rel="stylesheet" href="/assets/css/plataforma.css">
+</head>
+<body>
+  <main>
+    <p id="message" class="message" role="alert" hidden></p>
+
+    <!-- ===== Entrada do dono ===== -->
+    <section id="loginView" class="card card--narrow">
+      <h1>Painel da plataforma</h1>
+      <form id="loginForm">
+        <label>Usuário
+          <input name="usuario" autocomplete="username" autocapitalize="none" required>
+        </label>
+        <label>Senha
+          <input name="senha" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <!-- ===== Estabelecimentos ===== -->
+    <div id="panelView" hidden>
+      <header>
+        <h1>Estabelecimentos</h1>
+        <button id="logout" type="button" class="secondary">Sair</button>
+      </header>
+
+      <!-- Situação da cópia de segurança -->
+      <p id="copyStatus" class="copy-status" role="status" hidden></p>
+
+      <!-- Senha e PIN gerados: aparecem só uma vez -->
+      <section id="secretBox" class="card card--secret" hidden>
+        <h2 id="secretTitle"></h2>
+        <dl id="secretList"></dl>
+        <p>Anote agora e entregue ao cliente. Depois de fechar, não dá para ver de novo: só gerar outro.</p>
+        <button id="secretClose" type="button">Já anotei</button>
+      </section>
+
+      <section class="card">
+        <h2>Novo estabelecimento</h2>
+        <form id="createForm" class="row">
+          <label>Nome
+            <input name="nome" minlength="2" maxlength="80" required placeholder="Ex.: Bar do Beto">
+          </label>
+          <label>Login
+            <input name="login" minlength="3" maxlength="40" required autocapitalize="none" autocomplete="off" placeholder="Ex.: bar-do-beto">
+          </label>
+          <button type="submit">Criar</button>
+        </form>
+      </section>
+
+      <p id="empty" class="muted" hidden>Nenhum estabelecimento cadastrado.</p>
+      <ul id="list"></ul>
+    </div>
+  </main>
+  <script src="/assets/js/plataforma.js"></script>
+</body>
+</html>

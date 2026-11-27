@@ -1,0 +1,105 @@
+/* =========================================================
+   Garçom em atendimento, filtro por garçom e área da gerência
+   ========================================================= */
+
+/* ---------- Quem está atendendo (barra superior) ---------- */
+.waiter-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  max-width: 190px;
+  padding: 0 14px 0 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+.waiter-chip .icon { flex: none; }
+.waiter-chip span { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.waiter-chip small { font-size: 11px; color: var(--text-muted); }
+.waiter-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.waiter-chip.is-empty { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-text); }
+
+/* ---------- Escolha do garçom ---------- */
+.waiter-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.waiter-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 14px 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.waiter-option:hover { border-color: var(--border-strong); }
+.waiter-option.is-active { border-color: var(--primary); background: var(--primary-soft); }
+.waiter-empty { text-align: center; }
+
+/* ---------- "Lançando como" ---------- */
+.acting { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--primary-soft); font-size: 14px; }
+.acting__change { border: 0; background: none; padding: 4px 6px; color: var(--primary-text); font-weight: 700; text-decoration: underline; }
+
+/* ---------- Filtro e etiquetas ---------- */
+.waiter-filter {
+  height: 44px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+#clientWaiter {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.meta--waiter { font-weight: 650; color: var(--text); }
+.report__waiter { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.report__waiter .icon { width: 14px; height: 14px; }
+
+.form-error { margin: 0; color: var(--danger); font-size: 13.5px; }
+.form-error:empty { display: none; }
+
+/* ---------- Gerência ---------- */
+/* Abas numa linha só; no celular, duas linhas de duas */
+#manageTabs { display: grid; grid-template-columns: repeat(4, 1fr); align-self: stretch; height: auto; }
+#manageTabs .segmented__btn { min-height: 34px; }
+@media (max-width: 480px) {
+  #manageTabs { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- Relatórios ---------- */
+.mx-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.mx-table .tag { margin-left: 4px; }
+.panel { display: flex; flex-direction: column; gap: 14px; }
+.prod-add--team { grid-template-columns: 1fr auto; }
+.prod.is-off .prod__name { color: var(--text-faint); }
+.secret-form { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.secret-form:last-child { border-bottom: 0; }
+.secret-form .field { align-self: stretch; }
+.secret-form .field__note { margin: 0; }
+.pin-input { text-align: center; font-size: 24px; letter-spacing: .4em; }
+
+/* ---------- Celular: o nome do garçom continua visível ---------- */
+@media (max-width: 620px) {
+  .topbar__inner { flex-wrap: wrap; }
+  .topbar__actions { width: 100%; justify-content: flex-end; }
+  .waiter-chip { margin-right: auto; max-width: 45vw; }
+  .waiter-filter { width: 100%; }
+  .prod-add--team .prod-add__name { grid-column: 1 / -1; }
+}

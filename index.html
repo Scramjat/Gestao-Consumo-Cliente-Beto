@@ -19,8 +19,8 @@
   <link rel="stylesheet" href="assets/css/index.css">
   <link rel="stylesheet" href="assets/css/metrics.css">
   <link rel="stylesheet" href="assets/css/billing.css">
-  <link rel="stylesheet" href="assets/css/access.css">
   <link rel="stylesheet" href="assets/css/animations.css">
+  <link rel="stylesheet" href="assets/css/app.css">
 
   <!-- Carregado no <head> para aplicar o tema antes da página aparecer (evita "piscar") -->
   <script src="assets/js/theme.js"></script>
@@ -35,47 +35,27 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M4 8h13v9a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M7 2v2M11 2v2M15 2v2"/></svg>
         </div>
         <div>
-          <h1 class="brand__title">Comanda</h1>
+          <h1 class="brand__title" id="brandTitle">Comanda</h1>
           <p class="brand__night" id="todayLabel"></p>
         </div>
       </div>
 
       <nav class="topbar__actions" aria-label="Ações">
-        <button class="icon-btn" id="btnProducts" data-tip="Produtos e preços" aria-label="Produtos e preços">
+        <!-- Quem está atendendo neste aparelho -->
+        <button class="waiter-chip is-empty" id="btnWaiter" aria-label="Trocar quem está atendendo">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          <span><small>Atendendo</small><strong id="waiterName">Escolher</strong></span>
+        </button>
+
+        <button class="icon-btn" id="btnPrices" data-tip="Preços" aria-label="Consultar preços">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor"/></svg>
         </button>
 
-        <button class="icon-btn" id="btnMetrics" data-tip="Métricas" aria-label="Abrir métricas">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-3M12 16V8M17 16v-6"/></svg>
+        <button class="icon-btn" id="btnManage" data-tip="Gerência" aria-label="Área da gerência">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
         </button>
 
-        <!-- Baixar: planilha, backup e restauração -->
-        <div class="menu-wrap">
-          <button class="icon-btn" id="btnExport" data-tip="Planilha e backup" aria-label="Planilha e backup" aria-haspopup="menu" aria-expanded="false">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-          </button>
-          <div class="menu" id="exportMenu" role="menu" hidden>
-            <button class="menu__item" role="menuitem" data-menu="excel">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
-              <span><strong>Planilha Excel</strong><small>Tudo de cada cliente</small></span>
-            </button>
-            <button class="menu__item" role="menuitem" data-menu="backup">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-              <span><strong>Fazer backup</strong><small id="lastBackupLabel">Nunca feito</small></span>
-            </button>
-            <button class="menu__item" role="menuitem" data-menu="restore">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></svg>
-              <span><strong>Restaurar backup</strong><small>Recuperar de um arquivo</small></span>
-            </button>
-          </div>
-          <input type="file" id="restoreInput" accept=".json,application/json" hidden>
-        </div>
-
-        <button class="icon-btn" id="btnAccess" data-tip="Acessos e senhas" aria-label="Acessos e senhas" hidden>
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M17 6l3 3M14 9l2 2"/></svg>
-        </button>
-
-        <button class="icon-btn" id="btnLogout" data-tip="Sair" aria-label="Sair" hidden>
+        <button class="icon-btn" id="btnLogout" data-tip="Sair" aria-label="Sair">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
 
@@ -88,12 +68,7 @@
     <!-- Aviso quando o servidor não responde -->
     <div class="db-banner" id="dbBanner" role="alert" hidden>
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-      <span id="dbBannerText"></span>
-    </div>
-    <div class="db-banner db-banner--warn" id="passBanner" role="status" hidden>
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-      <span id="passBannerText"></span>
-      <button type="button" class="db-banner__btn" id="passBannerBtn">Abrir Acessos</button>
+      <span>Sem conexão com o servidor. A tela pode estar desatualizada e novos lançamentos não são salvos até a conexão voltar.</span>
     </div>
   </header>
 
@@ -125,7 +100,7 @@
       <button class="stat stat--done" data-filter="closed">
         <span class="stat__label">Concluídos</span>
         <strong class="stat__value" id="statClosed">0</strong>
-        <span class="stat__hint">Ver contas encerradas</span>
+        <span class="stat__hint">Encerradas nas últimas 24h</span>
       </button>
     </section>
 
@@ -133,9 +108,11 @@
     <section class="toolbar">
       <label class="search">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input type="search" id="searchInput" placeholder="Buscar por nome, mesa ou CPF" autocomplete="off" aria-label="Buscar cliente">
+        <input type="search" id="searchInput" placeholder="Buscar por nome, mesa, garçom ou CPF" autocomplete="off" aria-label="Buscar cliente">
         <kbd>/</kbd>
       </label>
+
+      <select class="waiter-filter" id="waiterFilter" aria-label="Filtrar por garçom"></select>
 
       <div class="segmented" id="filterGroup" role="group" aria-label="Filtrar clientes">
         <span class="segmented__thumb" aria-hidden="true"></span>
@@ -154,6 +131,8 @@
 
     <!-- ===== Lista de clientes ===== -->
     <section class="client-grid" id="clientList" aria-live="polite"></section>
+
+    <p class="item-empty" id="loadingState" hidden>Carregando…</p>
 
     <div class="empty" id="emptyState" hidden>
       <div class="empty__art" aria-hidden="true">
@@ -188,7 +167,7 @@
       <div class="modal__body">
         <label class="field">
           <span class="field__label">Nome <em>*</em></span>
-          <input id="clientName" name="name" type="text" maxlength="60" autocomplete="off" placeholder="Ex.: Gabriel">
+          <input id="clientName" name="name" type="text" maxlength="80" autocomplete="off" placeholder="Ex.: Gabriel">
           <small class="field__error" id="nameError"></small>
         </label>
 
@@ -197,10 +176,9 @@
           <input id="clientTable" name="table" type="text" maxlength="10" autocomplete="off" placeholder="Ex.: 5">
         </label>
 
-        <!-- Pronto, mas desligado: para ligar, Features.attendant = true em assets/js/features.js -->
-        <label class="field" id="attendantField" hidden>
-          <span class="field__label">Atendente <span class="field__hint">(opcional)</span></span>
-          <input id="clientAttendant" name="attendant" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: João">
+        <label class="field">
+          <span class="field__label">Garçom responsável</span>
+          <select id="clientWaiter"></select>
         </label>
 
         <label class="field">
@@ -208,6 +186,7 @@
           <input id="clientCpf" name="cpf" type="text" inputmode="numeric" maxlength="14" autocomplete="off" placeholder="000.000.000-00">
           <small class="field__error" id="cpfError"></small>
         </label>
+        <p class="form-error" id="clientError" role="alert"></p>
       </div>
 
       <footer class="modal__foot">
@@ -231,10 +210,11 @@
       </header>
 
       <div class="modal__body">
+        <p class="acting">Lançando como <strong id="itemWaiter"></strong> <button type="button" class="acting__change" id="itemWaiterChange">Trocar</button></p>
         <label class="field">
           <span class="field__label">O que pediu?</span>
           <input id="itemProduct" type="text" maxlength="60" autocomplete="off" placeholder="Ex.: cerveja skol" role="combobox" aria-expanded="false" aria-controls="productSuggest">
-          <small class="field__error" id="productError"></small>
+          <small class="field__error" id="itemError" role="alert"></small>
         </label>
         <ul class="suggest" id="productSuggest" role="listbox" aria-label="Produtos da lista" hidden></ul>
         <p class="field__note" id="productHint" hidden></p>
@@ -285,33 +265,7 @@
     </div>
   </dialog>
 
-  <!-- ===== Modal: métricas ===== -->
-  <dialog class="modal modal--xl" id="metricsDialog" aria-labelledby="metricsTitle">
-    <div class="modal__card">
-      <header class="modal__head">
-        <div>
-          <h2 id="metricsTitle">Métricas</h2>
-          <p class="modal__sub" id="metricsSub"></p>
-        </div>
-        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-        </button>
-      </header>
-      <div class="modal__body mx" id="metricsBody">
-        <div class="mx-period" id="metricsPeriod" role="group" aria-label="Período">
-          <button class="mx-period__btn is-active" data-period="today">Hoje</button>
-          <button class="mx-period__btn" data-period="24h">24 horas</button>
-          <button class="mx-period__btn" data-period="7d">7 dias</button>
-          <button class="mx-period__btn" data-period="30d">30 dias</button>
-          <button class="mx-period__btn" data-period="all">Tudo</button>
-        </div>
-        <div id="metricsContent"></div>
-      </div>
-      <div class="mx-tooltip" id="metricsTooltip" role="tooltip" hidden></div>
-    </div>
-  </dialog>
-
-  <!-- ===== Modal: entrar (administrador) ===== -->
+  <!-- ===== Modal: entrar (estabelecimento) ===== -->
   <dialog class="modal modal--sm" id="loginDialog" aria-labelledby="loginTitle">
     <form class="modal__card" id="loginForm" novalidate>
       <div class="modal__body login">
@@ -319,7 +273,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M4 8h13v9a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M7 2v2M11 2v2M15 2v2"/></svg>
         </div>
         <h2 id="loginTitle">Entrar na Comanda</h2>
-        <p class="login__sub">Acesso do administrador</p>
+        <p class="login__sub">Use o acesso do seu estabelecimento</p>
         <label class="field">
           <span class="field__label">Usuário</span>
           <input id="loginUser" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -371,59 +325,180 @@
     </form>
   </dialog>
 
-  <!-- ===== Modal: produtos e preços ===== -->
-  <dialog class="modal modal--lg" id="productsDialog" aria-labelledby="productsTitle">
+  <!-- ===== Modal: quem está atendendo ===== -->
+  <dialog class="modal modal--sm" id="waiterDialog" aria-labelledby="waiterTitle">
     <div class="modal__card">
       <header class="modal__head">
         <div>
-          <h2 id="productsTitle">Produtos e preços</h2>
-          <p class="modal__sub" id="productsSub"></p>
+          <h2 id="waiterTitle">Quem está atendendo?</h2>
+          <p class="modal__sub">Os pedidos saem no nome escolhido</p>
         </div>
         <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </header>
       <div class="modal__body">
-        <form class="prod-add" id="productForm" novalidate>
-          <label class="field prod-add__name">
-            <span class="field__label">Produto</span>
-            <input id="productName" maxlength="60" autocomplete="off" placeholder="Ex.: Cerveja Skol 350ml">
-          </label>
-          <label class="field prod-add__price">
-            <span class="field__label">Preço (R$)</span>
-            <input id="productPrice" inputmode="decimal" autocomplete="off" placeholder="0,00">
-          </label>
-          <button class="btn btn--primary" type="submit">Adicionar</button>
-          <small class="field__error prod-add__error" id="productFormError"></small>
-        </form>
-
-        <label class="search">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input type="search" id="productSearch" placeholder="Buscar produto" autocomplete="off" aria-label="Buscar produto">
-        </label>
-
-        <ul class="prod-list" id="productList"></ul>
+        <ul class="waiter-list" id="waiterList"></ul>
+        <div class="waiter-empty" id="waiterEmpty" hidden>
+          <p>Nenhum funcionário cadastrado. O gerente cadastra a equipe com o PIN.</p>
+          <button type="button" class="btn btn--primary" id="waiterManage">Abrir Gerência</button>
+        </div>
       </div>
     </div>
   </dialog>
 
-  <!-- ===== Modal: acessos e senhas (painel de controle) ===== -->
-  <dialog class="modal modal--lg" id="accessDialog" aria-labelledby="accessTitle">
+  <!-- ===== Modal: consulta de preços ===== -->
+  <dialog class="modal modal--lg" id="pricesDialog" aria-labelledby="pricesTitle">
+    <div class="modal__card">
+      <header class="modal__head">
+        <h2 id="pricesTitle">Preços dos produtos</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <label class="search">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="priceSearch" placeholder="Buscar produto" autocomplete="off" aria-label="Buscar produto">
+        </label>
+        <ul class="prod-list" id="priceList"></ul>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== Modal: PIN do gerente ===== -->
+  <dialog class="modal modal--sm" id="pinDialog" aria-labelledby="pinTitle">
+    <form class="modal__card" id="pinForm" novalidate>
+      <header class="modal__head">
+        <h2 id="pinTitle">PIN do gerente</h2>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body">
+        <label class="field">
+          <span class="field__label">PIN de 6 números</span>
+          <input id="pinInput" class="pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="6">
+          <small class="field__error" id="pinError" role="alert"></small>
+        </label>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn--primary">Entrar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ===== Modal: gerência ===== -->
+  <dialog class="modal modal--lg" id="manageDialog" aria-labelledby="manageTitle">
     <div class="modal__card">
       <header class="modal__head">
         <div>
-          <h2 id="accessTitle">Acessos e senhas</h2>
-          <p class="modal__sub" id="accessSub"></p>
+          <h2 id="manageTitle">Gerência</h2>
+          <p class="modal__sub">Ao fechar, o PIN será pedido de novo</p>
         </div>
         <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </header>
       <div class="modal__body">
-        <p class="bill-warning" id="accessWarn" hidden></p>
-        <ul class="acc-list" id="accessList"></ul>
-        <p class="acc-note">A senha só aparece quando você clica em <strong>Mostrar</strong> e some sozinha depois de alguns segundos. Trocar a senha de uma conta desconecta todos os aparelhos que estavam usando ela.</p>
+        <div class="segmented segmented--small" id="manageTabs" role="group" aria-label="Área">
+          <span class="segmented__thumb" aria-hidden="true"></span>
+          <button type="button" class="segmented__btn is-active" data-view="team">Equipe</button>
+          <button type="button" class="segmented__btn" data-view="products">Produtos</button>
+          <button type="button" class="segmented__btn" data-view="reports">Relatórios</button>
+          <button type="button" class="segmented__btn" data-view="access">Senha e PIN</button>
+        </div>
+
+        <section class="panel" data-panel="team">
+          <form class="prod-add prod-add--team" id="teamForm" novalidate>
+            <label class="field prod-add__name">
+              <span class="field__label">Nome do funcionário</span>
+              <input id="teamName" maxlength="40" autocomplete="off" placeholder="Ex.: João">
+            </label>
+            <button class="btn btn--primary" type="submit">Adicionar</button>
+            <small class="field__error prod-add__error" id="teamError" role="alert"></small>
+          </form>
+          <ul class="prod-list" id="teamList"></ul>
+        </section>
+
+        <section class="panel" data-panel="products" hidden>
+          <form class="prod-add" id="productForm" novalidate>
+            <label class="field prod-add__name">
+              <span class="field__label">Produto</span>
+              <input id="productName" maxlength="80" autocomplete="off" placeholder="Ex.: Cerveja Skol 350ml">
+            </label>
+            <label class="field prod-add__price">
+              <span class="field__label">Preço (R$)</span>
+              <input id="productPrice" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </label>
+            <button class="btn btn--primary" type="submit">Adicionar</button>
+            <small class="field__error prod-add__error" id="productFormError" role="alert"></small>
+          </form>
+          <label class="search">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="productSearch" placeholder="Buscar produto" autocomplete="off" aria-label="Buscar produto">
+          </label>
+          <ul class="prod-list" id="productList"></ul>
+        </section>
+
+        <section class="panel" data-panel="reports" hidden>
+          <p class="field__note">Faturamento, desempenho de cada garçom, quem atendeu cada mesa e planilha do Excel, por período.</p>
+          <button type="button" class="btn btn--primary" id="btnReports">Abrir relatórios</button>
+        </section>
+
+        <section class="panel" data-panel="access" hidden>
+          <form class="secret-form" id="passwordForm" novalidate>
+            <label class="field">
+              <span class="field__label">Nova senha de entrada <span class="field__hint">(8 caracteres ou mais)</span></span>
+              <input id="newPassword" type="password" maxlength="64" autocomplete="new-password">
+              <small class="field__error" id="passwordError" role="alert"></small>
+            </label>
+            <p class="field__note">Trocar a senha desconecta todos os outros aparelhos.</p>
+            <button class="btn btn--primary" type="submit">Trocar senha</button>
+          </form>
+          <form class="secret-form" id="newPinForm" novalidate>
+            <label class="field">
+              <span class="field__label">Novo PIN do gerente <span class="field__hint">(6 números)</span></span>
+              <input id="newPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+              <small class="field__error" id="newPinError" role="alert"></small>
+            </label>
+            <button class="btn btn--primary" type="submit">Trocar PIN</button>
+          </form>
+        </section>
       </div>
+    </div>
+  </dialog>
+
+  <!-- ===== Modal: relatórios (gerência) ===== -->
+  <dialog class="modal modal--xl" id="metricsDialog" aria-labelledby="metricsTitle">
+    <div class="modal__card">
+      <header class="modal__head">
+        <div>
+          <h2 id="metricsTitle">Relatórios</h2>
+          <p class="modal__sub" id="metricsSub"></p>
+        </div>
+        <button type="button" class="icon-btn icon-btn--sm" data-close aria-label="Fechar">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+      <div class="modal__body mx" id="metricsBody">
+        <div class="mx-toolbar">
+          <div class="mx-period" id="metricsPeriod" role="group" aria-label="Período">
+            <button class="mx-period__btn is-active" data-period="today">Hoje</button>
+            <button class="mx-period__btn" data-period="24h">24 horas</button>
+            <button class="mx-period__btn" data-period="7d">7 dias</button>
+            <button class="mx-period__btn" data-period="30d">30 dias</button>
+            <button class="mx-period__btn" data-period="12m">12 meses</button>
+          </div>
+          <button type="button" class="btn btn--primary btn--sm" id="btnExcel">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+            Baixar Excel
+          </button>
+        </div>
+        <div id="metricsContent"></div>
+      </div>
+      <div class="mx-tooltip" id="metricsTooltip" role="tooltip" hidden></div>
     </div>
   </dialog>
 
@@ -445,19 +520,19 @@
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
   <!-- ===== Scripts (ordem importa) ===== -->
-  <script src="assets/js/roles.js"></script>
-  <script src="assets/js/features.js"></script>
   <script src="assets/js/utils.js"></script>
   <script src="assets/js/icons.js"></script>
   <script src="assets/js/billing.js"></script>
-  <script src="assets/js/storage.js"></script>
-  <script src="assets/js/markdown.js"></script>
+  <script src="assets/js/waiter-stats.js"></script>
   <script src="assets/js/excel.js"></script>
   <script src="assets/js/metrics.js"></script>
   <script src="assets/js/api.js"></script>
+  <script src="assets/js/store.js"></script>
   <script src="assets/js/ui.js"></script>
-  <script src="assets/js/products.js"></script>
-  <script src="assets/js/accounts.js"></script>
+  <script src="assets/js/waiter.js"></script>
+  <script src="assets/js/prices.js"></script>
+  <script src="assets/js/manage.js"></script>
+  <script src="assets/js/reports.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

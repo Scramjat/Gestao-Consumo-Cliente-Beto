@@ -18,6 +18,8 @@ const UI = (() => {
       if (!dialog.open || dialog.classList.contains('is-closing')) return;
       dialog.classList.add('is-closing');
       setTimeout(() => {
+        // Se a janela foi reaberta durante a animação, ela continua aberta
+        if (!dialog.classList.contains('is-closing')) return;
         dialog.classList.remove('is-closing');
         dialog.close();
       }, reduceMotion() ? 0 : 150);
@@ -61,7 +63,8 @@ const UI = (() => {
     // No máximo 3 avisos visíveis
     while (stack.children.length >= 3) stack.firstElementChild.remove();
     stack.append(el);
-    const timer = setTimeout(dismiss, action ? Math.max(duration, 5500) : duration);
+    const wait = type === 'error' ? 6000 : duration;
+    const timer = setTimeout(dismiss, action ? Math.max(wait, 5500) : wait);
     return dismiss;
   }
 
@@ -101,11 +104,13 @@ const UI = (() => {
   /* ---------- Lista de clientes ---------- */
   const seenCards = new Set();
 
-  /** Horário de cada pedido: "21:04" ou "21:04 (1) · 23:10 (2)". `full` traz a data completa. */
+  /** "21:04 Ana" ou "21:04 Ana (1) · 23:10 Bruno (2)". `full` traz a data completa. */
   function orderTimes(item, full = false) {
     const fmt = full ? Utils.formatFull : Utils.formatWhen;
-    if (item.orders.length === 1) return fmt(item.orders[0].at);
-    return item.orders.map((o) => `${fmt(o.at)} (${o.qty})`).join(full ? '\n' : ' · ');
+    return item.orders.map((o) => {
+      const who = `${fmt(o.at)} ${Store.employeeName(o.waiterId)}`;
+      return item.orders.length === 1 ? who : `${who} (${o.qty})`;
+    }).join(full ? '\n' : ' · ');
   }
 
   /** Valor da linha numa conta encerrada: total em destaque e "4 × R$ 10,00" embaixo. */
@@ -118,14 +123,13 @@ const UI = (() => {
     </span>`;
   }
 
-  function itemRow(item, highlight, closed, line) {
-    const cls = highlight === 'new' ? 'is-new' : highlight === 'pulse' ? 'is-pulse' : '';
+  function itemRow(item, pulse, closed, line) {
     return `
-      <li class="item ${cls}" data-item-id="${item.id}">
+      <li class="item ${pulse ? 'is-pulse' : ''}" data-item-key="${esc(item.key)}">
         <span class="item__qty">${item.qty}</span>
         <span class="item__name">
           ${esc(item.product)}
-          <span class="item__when" title="${orderTimes(item, true)}">${Icons.svg('clock')} ${orderTimes(item)}</span>
+          <span class="item__when" title="${esc(orderTimes(item, true))}">${Icons.svg('clock')} ${esc(orderTimes(item))}</span>
         </span>
         ${closed ? priceCell(line) : `<span class="item__actions">
           <button class="mini-btn" data-action="dec" aria-label="Diminuir ${esc(item.product)}">${Icons.svg('minus')}</button>
@@ -134,33 +138,27 @@ const UI = (() => {
       </li>`;
   }
 
-  function clientCard(client, { animateIn, delay, reason }) {
+  function clientCard(client, { animateIn, delay, changed }) {
     const total = client.items.reduce((s, i) => s + i.qty, 0);
     const locked = client.items.length > 0;
     const closed = !!client.closedAt;
-    const sameClient = reason && reason.clientId === client.id;
+    const bill = Store.billOf(client);
 
-    // Valores da conta (encerrada: os guardados no pagamento; aberta: lista de preços atual)
-    const bill = Billing.bill(client, Store.products());
-
-    const items = client.items.map((item, i) => {
-      let highlight = null;
-      if (sameClient && reason.itemId === item.id) {
-        highlight = reason.type === 'item:add' && reason.isNew ? 'new' : 'pulse';
-      }
-      return itemRow(item, highlight, closed, closed && client.payment ? bill.lines[i] : null);
+    const items = client.items.map((item) => {
+      const line = closed ? bill.lines.find((l) => Billing.norm(l.product) === item.key) : null;
+      return itemRow(item, changed.has(`${client.id}|${item.key}|${item.qty}`), closed, line);
     }).join('');
 
     // Parcial (conta aberta) ou total pago (conta encerrada)
     let billBox = '';
-    if (closed && client.payment) {
+    if (closed) {
       billBox = `<div class="bill-foot">
         <span class="bill-foot__label">Total consumido</span>
         <strong class="bill-foot__total">${Billing.money(bill.totalCents)}</strong>
         <span class="pay-badge">${Icons.svg('receipt')} ${esc(Billing.methodLabel(bill.method))}</span>
         ${bill.missing ? `<small class="bill-foot__warn">${Utils.plural(bill.missing, 'item', 'itens')} sem preço</small>` : ''}
       </div>`;
-    } else if (!closed && locked && (bill.totalCents || bill.missing < bill.lines.length)) {
+    } else if (locked && (bill.totalCents || bill.missing < bill.lines.length)) {
       billBox = `<div class="bill-sub">
         <span>Parcial</span>
         <strong>${Billing.money(bill.totalCents)}</strong>
@@ -171,15 +169,15 @@ const UI = (() => {
     const classes = ['client-card'];
     if (closed) classes.push('is-closed');
     if (animateIn) classes.push('is-new');
-    if (sameClient && reason.type === 'client:update') classes.push('is-flash');
 
     const deleteTip = locked ? 'Já consumiu — não pode ser excluído' : 'Excluir cliente';
     const badge = closed
       ? `<span class="badge badge--done">${Icons.svg('check')} Encerrado</span>`
       : `<span class="badge ${total ? 'badge--on' : ''}">${Utils.plural(total, 'item', 'itens')}</span>`;
 
+    const closedBy = client.closedBy ? ` por ${esc(Store.employeeName(client.closedBy))}` : '';
     const footer = closed
-      ? `<span class="closed-note">${Icons.svg('receipt')} Encerrado ${Utils.isToday(client.closedAt) ? 'às ' : 'em '}${Utils.formatWhen(client.closedAt)} · ${Utils.plural(total, 'item', 'itens')}</span>
+      ? `<span class="closed-note">${Icons.svg('receipt')} Encerrado${closedBy} ${Utils.isToday(client.closedAt) ? 'às ' : 'em '}${Utils.formatWhen(client.closedAt)}</span>
          <button class="btn btn--ghost btn--sm" data-action="reopen">${Icons.svg('undo')} Reabrir</button>`
       : `<button class="btn btn--soft btn--sm" data-action="add-item">${Icons.svg('plus')} Consumo</button>
           <span class="client-card__tools">
@@ -200,9 +198,9 @@ const UI = (() => {
             <h3 class="client-card__name" title="${esc(client.name)}">${esc(client.name)}</h3>
             <div class="client-card__meta">
               ${client.table ? `<span class="meta meta--table">${Icons.svg('table')} Mesa ${esc(client.table)}</span>` : ''}
-              ${Features.attendant && client.attendant ? `<span class="meta" title="Atendente">${Icons.svg('user')} ${esc(client.attendant)}</span>` : ''}
-              <span class="meta">${Icons.svg('id')} ${client.cpf ? Utils.formatCPF(client.cpf) : 'Sem CPF'}</span>
-              <span class="meta" title="Cadastrado em ${Utils.formatFull(client.createdAt)}">${Icons.svg('clock')} ${Utils.formatWhen(client.createdAt)} <em>· ${Utils.timeAgo(client.createdAt)}</em></span>
+              <span class="meta meta--waiter" title="Garçom responsável">${Icons.svg('user')} ${esc(Store.employeeName(client.waiterId))}</span>
+              ${client.cpf ? `<span class="meta">${Icons.svg('id')} ${Utils.formatCPF(client.cpf)}</span>` : ''}
+              <span class="meta" title="Aberta em ${Utils.formatFull(client.createdAt)}">${Icons.svg('clock')} ${Utils.formatWhen(client.createdAt)} <em>· ${Utils.timeAgo(client.createdAt)}</em></span>
             </div>
           </div>
           ${badge}
@@ -219,18 +217,42 @@ const UI = (() => {
       </article>`;
   }
 
-  function renderList(container, clients, reason) {
+  /* Quantidades já desenhadas: serve para destacar a linha que mudou (aqui ou em outro aparelho) */
+  let knownLines = null;
+
+  function renderList(container, clients) {
+    const lines = new Set(Store.get().clients.flatMap((c) => c.items.map((i) => `${c.id}|${i.key}|${i.qty}`)));
+    const changed = new Set(knownLines ? [...lines].filter((key) => !knownLines.has(key)) : []);
+    knownLines = Store.isLoaded() ? lines : null;
+
+    // Guarda onde estava o foco do teclado, pois os cards são redesenhados
+    const focused = container.contains(document.activeElement) ? document.activeElement : null;
+    const focus = focused && {
+      id: focused.closest('.client-card')?.dataset.id,
+      key: focused.closest('.item')?.dataset.itemKey,
+      action: focused.dataset.action
+    };
+
     let order = 0;
     container.innerHTML = clients.map((client) => {
       const animateIn = !seenCards.has(client.id);
       seenCards.add(client.id);
       const delay = animateIn ? Math.min(order++ * 45, 400) : 0;
-      return clientCard(client, { animateIn, delay, reason });
+      return clientCard(client, { animateIn, delay, changed });
     }).join('');
+
+    if (focus?.id && focus.action) {
+      const card = container.querySelector(`[data-id="${CSS.escape(focus.id)}"]`);
+      const scope = focus.key ? card?.querySelector(`[data-item-key="${CSS.escape(focus.key)}"]`) : card;
+      scope?.querySelector(`[data-action="${focus.action}"]`)?.focus({ preventScroll: true });
+    }
   }
 
-  /** Esquece os cards já vistos (para animar de novo após carregar outros dados). */
-  function resetSeen() { seenCards.clear(); }
+  /** Esquece o que já foi desenhado (ao trocar de estabelecimento). */
+  function reset() {
+    seenCards.clear();
+    knownLines = null;
+  }
 
   /** Atualiza um número com efeito de "pulo" se ele mudou. */
   function setStat(el, value) {
@@ -242,20 +264,39 @@ const UI = (() => {
     el.classList.add('is-bump');
   }
 
-  /** Remove o card com animação antes de apagar o dado. */
-  function animateCardOut(card) {
-    return new Promise((resolve) => {
-      if (!card || reduceMotion()) return resolve();
-      card.classList.add('is-leaving');
-      setTimeout(resolve, 200);
-    });
-  }
-
   function shake(el) {
     el.classList.remove('is-shake');
     void el.offsetWidth;
     el.classList.add('is-shake');
   }
 
-  return { Modal, toast, confirm, renderList, resetSeen, setStat, animateCardOut, shake };
+  function setFieldError(input, errorEl, message) {
+    errorEl.textContent = message || '';
+    input.closest('.field')?.classList.toggle('has-error', !!message);
+  }
+
+  /** Trava o botão enquanto a ação vai ao servidor (evita envio em dobro). */
+  async function whileBusy(button, work) {
+    if (button.disabled) return undefined;
+    button.disabled = true;
+    try {
+      return await work();
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  /** Move a pílula do filtro segmentado até o botão marcado. */
+  function moveThumb(group) {
+    const active = group.querySelector('.is-active');
+    const thumb = group.querySelector('.segmented__thumb');
+    if (!active || !thumb) return;
+    thumb.style.width = `${active.offsetWidth}px`;
+    thumb.style.height = `${active.offsetHeight}px`;
+    thumb.style.top = '0';
+    // Posição em X e Y, pois no celular as abas ficam em 2 linhas
+    thumb.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+  }
+
+  return { Modal, toast, confirm, renderList, reset, setStat, shake, setFieldError, whileBusy, moveThumb };
 })();

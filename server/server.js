@@ -1,224 +1,221 @@
 /* =========================================================
-   Servidor da Comanda
-   - Entrega o site (index.html, css, js)
-   - Login das três contas (ADMIN, admin, user) e painel de senhas
-   - Guarda os dados: no Postgres (Neon) quando existe DATABASE_URL,
-     ou em arquivos (computador e testes)
+   Servidor da Comanda (SaaS)
+   - API por ação, com login por estabelecimento e PIN do gerente
+   - Painel do dono da plataforma em /plataforma
+   - Dados no Postgres
 
-   Variáveis de ambiente (todas opcionais no computador):
-     DATABASE_URL    endereço do banco Postgres (Neon). Sem ela, usa arquivos.
-     SESSION_SECRET  assina as sessões (obrigatória com banco Postgres)
-     ENCRYPTION_KEY  cifra as senhas guardadas no banco (padrão: SESSION_SECRET)
-     SENHA_INICIAL   senha das 3 contas na primeira vez (padrão: "beto")
+   Variáveis de ambiente:
+     DATABASE_URL      (obrigatória) endereço do banco Postgres
+     SESSION_SECRET    (obrigatória) assina as sessões, 32 caracteres ou mais
+     PLATAFORMA_SENHA  senha do painel do dono, 12 caracteres ou mais.
+                       Sem ela o painel fica desligado.
+     PLATAFORMA_LOGIN  login do painel do dono (padrão: "dono")
+     PGSSL=disable     só para um Postgres local, sem SSL
+     PROXY_SALTOS      quantos proxies há na frente (padrão: 1 no Render, 0 fora)
+     PORT, HOST        onde o servidor ouve
    ========================================================= */
 
 const http = require('http');
-const fs = require('fs');
-const fsp = require('fs/promises');
+const fs = require('fs/promises');
 const path = require('path');
-const Roles = require('../assets/js/roles.js');
 const Auth = require('./auth.js');
-const { createStorage } = require('./storage.js');
-const { createAccounts } = require('./accounts.js');
+const V = require('./validar.js');
+const { createDb, createPool } = require('./db.js');
+const { createEstablishments } = require('./estabelecimentos.js');
+const { createOperation } = require('./operacao.js');
+const { createRoutes } = require('./rotas.js');
 
 const ROOT = path.resolve(__dirname, '..');
-const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
-
-// COMANDA_COFRE / COMANDA_PORTA permitem mudar a pasta e a porta sem mexer no config (testes)
-const VAULT = path.resolve(ROOT, process.env.COMANDA_COFRE || config.pastaCofre || './BD');
-const PORT = Number(process.env.COMANDA_PORTA || process.env.PORT || config.porta || 3210);
-// O Render define PORT e precisa ouvir em todas as interfaces; no computador, só em localhost
-const HOST = process.env.HOST || (process.env.PORT && !process.env.COMANDA_PORTA ? '0.0.0.0' : '127.0.0.1');
-const DATA_DIR = path.join(VAULT, 'Comanda');
-const MAX_BODY = 5 * 1024 * 1024;
+const MAX_BODY = 64 * 1024;
+const MIN_SECRET = 32;
+const MIN_OWNER_PASSWORD = 12;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.md': 'text/markdown; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
 
-/** Os erros vão para server/erros.log (e para o log do Render). */
-function log(message) {
-  const line = `${new Date().toLocaleString('pt-BR')}  ${message}\n`;
-  console.error(line.trim());
-  try { fs.appendFileSync(path.join(__dirname, 'erros.log'), line); } catch { /* ignora */ }
-}
+/* Só estes arquivos são entregues: nada do servidor, dos testes ou da configuração */
+const ASSETS = [
+  ...['theme', 'index', 'metrics', 'billing', 'animations', 'app', 'plataforma'].map((n) => `assets/css/${n}.css`),
+  ...[
+    'theme', 'utils', 'icons', 'billing', 'waiter-stats', 'excel', 'metrics', 'api', 'store', 'ui', 'waiter',
+    'prices', 'manage', 'reports', 'app', 'plataforma'
+  ].map((n) => `assets/js/${n}.js`),
+  ...['favicon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']
+    .map((n) => `assets/img/${n}`),
+  'index.html', 'manifest.webmanifest', 'sw.js'
+];
 
-/* ---------- HTTP ---------- */
+const PAGES = {
+  ...Object.fromEntries(ASSETS.map((file) => [`/${file}`, file])),
+  '/': 'index.html',
+  '/plataforma': 'plataforma.html'
+};
+
+// Os cards usam o atributo style (cor de cada cliente), por isso style-src aceita estilo na linha
+const SECURITY_HEADERS = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    + "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+};
+
 function send(res, status, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(status, {
-    'Content-Type': type,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer'
-  });
+  res.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': type });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
-function readBody(req, limit = MAX_BODY) {
+/** Corpo da requisição: sempre um objeto JSON (ou vazio). */
+function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) { reject(new Error('Corpo muito grande')); req.destroy(); return; }
-      chunks.push(c);
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= MAX_BODY) chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => {
+      if (size > MAX_BODY) return reject(new V.HttpError(413, 'Dados grandes demais.'));
+      if (!size) return resolve({});
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (body && typeof body === 'object' && !Array.isArray(body)) return resolve(body);
+      } catch { /* cai no erro abaixo */ }
+      return reject(new V.HttpError(400, 'Dados inválidos.'));
+    });
     req.on('error', reject);
   });
 }
 
-async function readJson(req, limit) {
-  try { return JSON.parse(await readBody(req, limit)); } catch { return null; }
+/**
+ * Endereço de quem chamou, usado no limite de tentativas. Atrás de um proxy, o
+ * começo do X-Forwarded-For é escrito por quem chama, então conta-se do fim.
+ */
+function clientIp(req, proxyHops) {
+  if (proxyHops > 0) {
+    const chain = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const ip = chain[Math.max(chain.length - proxyHops, 0)];
+    if (ip) return ip.slice(0, 64);
+  }
+  return req.socket.remoteAddress || 'desconhecido';
 }
 
-const isValidState = (s) => s && typeof s === 'object' && Array.isArray(s.clients)
-  && (s.products === undefined || Array.isArray(s.products));
+const bearer = (req) => (String(req.headers.authorization || '').match(/^Bearer (.+)$/) || [])[1] || '';
 
-const clientIp = (req) => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'desconhecido';
-
-async function serveStatic(res, pathname) {
-  const rel = pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '');
-  const file = path.resolve(ROOT, rel);
-  // Só entrega o site: nada fora da pasta, nem o servidor, config ou o próprio banco
-  const rootFiles = ['index.html', 'sw.js', 'manifest.webmanifest'].map((f) => path.join(ROOT, f));
-  const allowed = rootFiles.includes(file) || file.startsWith(path.join(ROOT, 'assets') + path.sep);
-  if (!allowed) return send(res, 404, 'Não encontrado', 'text/plain; charset=utf-8');
-  try {
-    const data = await fsp.readFile(file);
-    send(res, 200, data, MIME[path.extname(file).toLowerCase()] || 'application/octet-stream');
-  } catch {
-    send(res, 404, 'Não encontrado', 'text/plain; charset=utf-8');
+/** Monta o servidor (sem abrir a porta). */
+async function createApp({ pool, secret, ownerLogin = 'dono', ownerPassword = '', proxyHops = 0, log = () => {} }) {
+  if (String(secret || '').length < MIN_SECRET) {
+    throw new Error(`SESSION_SECRET é obrigatória e precisa ter ${MIN_SECRET} caracteres ou mais.`);
   }
-}
+  const db = createDb({ pool, log });
+  await db.init();
 
-/* ---------- Inicialização ---------- */
-async function main() {
-  const databaseUrl = process.env.DATABASE_URL || '';
-  const storage = createStorage({ databaseUrl, dataDir: DATA_DIR, log });
-  await storage.init();
-
-  // Chaves: no Postgres vêm sempre do ambiente; em arquivo, usa uma chave local gerada uma vez
-  const secret = process.env.SESSION_SECRET || await storage.secret();
-  if (!secret) {
-    log('Recusado: com banco Postgres é obrigatório definir SESSION_SECRET.');
-    process.exit(1);
+  const establishments = createEstablishments({ db, secret, log });
+  const operation = createOperation({ db });
+  let owner = null;
+  if (ownerPassword.length >= MIN_OWNER_PASSWORD) {
+    owner = establishments.platform({ login: ownerLogin, password: ownerPassword });
+  } else {
+    log(`Painel do dono desligado: defina PLATAFORMA_SENHA com ${MIN_OWNER_PASSWORD} caracteres ou mais.`);
   }
-  const encryptionKey = process.env.ENCRYPTION_KEY || secret;
+  const routes = createRoutes({ establishments, operation, owner, limiter: Auth.createLimiter() });
 
-  const accounts = createAccounts({
-    storage, secret, encryptionKey, log,
-    initialPassword: (process.env.SENHA_INICIAL || '').trim()
-  });
-  await accounts.init();
-
-  const limiter = Auth.createLimiter();
-
-  /* ---------- API ---------- */
-  async function handleLogin(req, res) {
-    const ip = clientIp(req);
-    if (limiter.blocked(ip)) return send(res, 429, { erro: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' });
-
-    const body = (await readJson(req, 4096)) || {};
-    const account = await accounts.login(body.usuario, body.senha);
-    if (!account) {
-      limiter.fail(ip);
-      await new Promise((r) => setTimeout(r, 400));
-      return send(res, 401, { erro: 'Usuário ou senha incorretos.' });
+  /** Confere o acesso que a rota exige e devolve o estabelecimento logado. */
+  async function authorize(req, access) {
+    if (access === 'publico') return null;
+    if (access === 'dono') {
+      if (!owner || !owner.isOwner(bearer(req))) V.fail(401, 'Faça login para continuar.');
+      return null;
     }
-    limiter.ok(ip);
-    return send(res, 200, { token: accounts.tokenFor(account), ...accounts.publicInfo(account) });
+    const est = (await establishments.fromToken(bearer(req))) || V.fail(401, 'Faça login para continuar.');
+    if (access === 'gerencia' && !establishments.isManager(est, String(req.headers['x-gerencia'] || ''))) {
+      V.fail(403, 'Digite o PIN do gerente para continuar.');
+    }
+    return est;
   }
 
-  async function handleApi(req, res, pathname) {
-    // Público: saber se o servidor está no ar
-    if (pathname === '/api/saude' && req.method === 'GET') {
-      return send(res, 200, { ok: true, auth: true, banco: storage.name });
-    }
-    if (pathname === '/api/login' && req.method === 'POST') return handleLogin(req, res);
+  async function handleApi(req, res, url) {
+    const matches = routes.filter((r) => r.pattern.test(url.pathname));
+    const found = matches.find((r) => r.method === req.method);
+    if (!found) return send(res, matches.length ? 405 : 404, { erro: 'Rota não encontrada.' });
 
-    // Daqui para baixo, só com login
-    const match = String(req.headers.authorization || '').match(/^Bearer (.+)$/);
-    const me = match ? accounts.fromToken(match[1]) : null;
-    if (!me) return send(res, 401, { erro: 'Faça login para continuar.' });
+    const est = await authorize(req, found.access);
+    const body = req.method === 'GET' ? {} : await readBody(req);
+    const result = await found.handler({
+      est,
+      body,
+      query: url.searchParams,
+      params: { ...url.pathname.match(found.pattern).groups },
+      ip: clientIp(req, proxyHops)
+    });
+    return send(res, 200, result);
+  }
 
-    if (pathname === '/api/sessao' && req.method === 'GET') {
-      return send(res, 200, accounts.publicInfo(me));
-    }
-
-    /* Painel de controle: ver e trocar senhas (cada função só enxerga as suas contas) */
-    if (pathname === '/api/contas' && req.method === 'GET') {
-      if (!Roles.can(me.role, 'accounts.panel')) return send(res, 403, { erro: 'Sem permissão.' });
-      return send(res, 200, { eu: accounts.publicInfo(me), contas: accounts.list(me), banco: storage.name });
-    }
-    if (pathname === '/api/contas/senha-ver' && req.method === 'POST') {
-      const body = (await readJson(req, 4096)) || {};
-      const r = accounts.reveal(me, String(body.login || ''));
-      return send(res, r.status, r.status === 200 ? { senha: r.senha } : { erro: r.erro });
-    }
-    if (pathname === '/api/contas/senha' && req.method === 'PUT') {
-      const body = (await readJson(req, 4096)) || {};
-      const r = await accounts.changePassword(me, String(body.login || ''), body.senha);
-      return send(res, r.status, r.status === 200 ? { conta: r.conta, token: r.token } : { erro: r.erro });
-    }
-
-    /* Dados do sistema */
-    if (pathname === '/api/estado' && req.method === 'GET') {
-      return send(res, 200, { estado: await storage.getState() });
-    }
-    // PUT normal; POST para o envio de emergência ao fechar a página
-    if (pathname === '/api/estado' && (req.method === 'PUT' || req.method === 'POST')) {
-      const body = await readJson(req);
-      if (!body || !isValidState(body.estado)) return send(res, 400, { erro: 'Dados inválidos' });
-      const state = body.estado;
-      // Só quem pode editar produtos altera a lista de preços: para os outros, vale a que está salva
-      if (!Roles.can(me.role, 'products.edit')) {
-        const current = await storage.getState();
-        state.products = (current && current.products) || [];
-      }
-      await storage.saveState(state);
-      return send(res, 200, { ok: true });
-    }
-
-    return send(res, 404, { erro: 'Rota não encontrada' });
+  async function handlePage(req, res, pathname) {
+    const text = 'text/plain; charset=utf-8';
+    if (!Object.hasOwn(PAGES, pathname)) return send(res, 404, 'Não encontrado', text);
+    const file = path.join(ROOT, PAGES[pathname]);
+    return send(res, 200, await fs.readFile(file), MIME[path.extname(file)]);
   }
 
   const server = http.createServer(async (req, res) => {
-    const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    let pathname = req.url;
     try {
-      if (pathname.startsWith('/api/')) await handleApi(req, res, pathname);
-      else await serveStatic(res, pathname);
+      const url = new URL(req.url, 'http://localhost');
+      pathname = url.pathname;
+      if (pathname.startsWith('/api/')) await handleApi(req, res, url);
+      else await handlePage(req, res, pathname);
     } catch (e) {
-      log(`Erro em ${req.method} ${pathname}: ${e.message}`);
-      send(res, 500, { erro: 'Erro no servidor' });
+      if (e instanceof V.HttpError) return send(res, e.status, { erro: e.message });
+      log(`Erro em ${req.method} ${pathname}: ${e.stack || e.message}`);
+      return send(res, 500, { erro: 'Erro no servidor' });
     }
   });
 
-  server.on('error', (e) => {
-    // Já existe um servidor rodando: este sai em silêncio
-    if (e.code === 'EADDRINUSE') process.exit(0);
-    log(`Falha ao iniciar: ${e.message}`);
-    process.exit(1);
+  return {
+    server,
+    async close() {
+      await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); });
+      await db.close();
+    }
+  };
+}
+
+async function main() {
+  const log = (message) => console.error(`${new Date().toLocaleString('pt-BR')}  ${message}`);
+  const databaseUrl = process.env.DATABASE_URL || '';
+  if (!databaseUrl) throw new Error('DATABASE_URL é obrigatória (endereço do banco Postgres).');
+
+  const app = await createApp({
+    pool: createPool(databaseUrl),
+    secret: process.env.SESSION_SECRET || '',
+    ownerLogin: (process.env.PLATAFORMA_LOGIN || '').trim() || 'dono',
+    ownerPassword: process.env.PLATAFORMA_SENHA || '',
+    proxyHops: Number(process.env.PROXY_SALTOS || (process.env.RENDER ? 1 : 0)),
+    log
   });
 
-  process.on('unhandledRejection', (e) => log(`Erro inesperado: ${e && e.message}`));
-  process.on('SIGTERM', () => server.close(async () => { await storage.close().catch(() => {}); process.exit(0); }));
+  const port = Number(process.env.PORT || 3210);
+  // O Render define PORT e precisa ouvir em todas as interfaces; no computador, só em localhost
+  const host = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1');
+  app.server.listen(port, host, () => console.log(`Comanda rodando em http://localhost:${port}`));
 
-  server.listen(PORT, HOST, () => {
-    console.log(`Comanda rodando em http://localhost:${PORT} · banco: ${storage.location}`);
+  process.on('unhandledRejection', (e) => log(`Erro inesperado: ${e && e.message}`));
+  process.on('SIGTERM', async () => { await app.close().catch(() => {}); process.exit(0); });
+}
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(`Falha ao iniciar: ${e.message}`);
+    process.exit(1);
   });
 }
 
-main().catch((e) => {
-  log(`Falha ao iniciar: ${e.message}`);
-  process.exit(1);
-});
+module.exports = { createApp };
