@@ -82,9 +82,13 @@ function createRoutes({ establishments, operation, owner, limiter }) {
     estabelecimento: await establishments.update(params.id, body)
   }));
   route('POST', '/api/plataforma/estabelecimentos/:id/redefinir-senha', 'dono',
-    ({ params }) => establishments.resetPassword(params.id));
-  route('POST', '/api/plataforma/estabelecimentos/:id/redefinir-pin', 'dono',
-    ({ params }) => establishments.resetPin(params.id));
+    ({ params, body }) => establishments.resetPassword(params.id, body));
+  route('POST', '/api/plataforma/estabelecimentos/:id/redefinir-pin', 'dono', async ({ params, body }) => {
+    const result = await establishments.resetPin(params.id, body);
+    // PIN novo: quem estava bloqueado por errar o antigo pode tentar de novo
+    limiter.clear(`pin:${params.id}`);
+    return result;
+  });
 
   /* ---------- Equipe ---------- */
   route('GET', '/api/sessao', 'equipe', ({ est }) => ({ estabelecimento: establishments.publicInfo(est) }));

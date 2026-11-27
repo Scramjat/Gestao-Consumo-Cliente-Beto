@@ -102,6 +102,64 @@ test('redefinir a senha desconecta os aparelhos; redefinir o PIN derruba a gerê
   assert.equal((await login(bar.login, senha)).status, 200);
 });
 
+test('o dono edita nome e login; os aparelhos conectados continuam', async () => {
+  const bar = await app.newEstablishment('bar-edita');
+  const outro = await app.newEstablishment('bar-ocupado');
+  const token = await app.ownerToken();
+  const patch = (body, id = bar.id) => app.call('PATCH', `${BASE}/${id}`, { token, body });
+
+  const r = await patch({ nome: '  Bar Novo ', login: ' Bar-Novo ' });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.estabelecimento.nome, r.data.estabelecimento.login], ['Bar Novo', 'bar-novo']);
+  assert.equal((await login('bar-edita', bar.senha)).status, 401);
+  assert.equal((await login('bar-novo', bar.senha)).status, 200);
+  assert.equal((await app.ok('GET', '/api/sessao', { token: bar.token })).estabelecimento.nome, 'Bar Novo');
+
+  assert.equal((await patch({ login: outro.login })).status, 409);
+  assert.equal((await patch({ login: 'com espaço' })).status, 400);
+  assert.equal((await patch({ nome: 'x' })).status, 400);
+  // Uma edição recusada não muda nada
+  assert.equal((await patch({ nome: 'Não vale', login: outro.login })).status, 409);
+  assert.equal((await app.ok('GET', '/api/sessao', { token: bar.token })).estabelecimento.nome, 'Bar Novo');
+  assert.equal((await patch({ login: 'qualquer' }, uuid())).status, 404);
+  // Só o dono
+  assert.equal((await app.call('PATCH', `${BASE}/${bar.id}`, { token: bar.token, body: { login: 'invadido' } })).status, 401);
+});
+
+test('o dono escolhe a senha e o PIN, com as mesmas regras de segurança', async () => {
+  const bar = await app.newEstablishment('bar-escolhe');
+  const token = await app.ownerToken();
+  const setPassword = (body) => app.call('POST', `${BASE}/${bar.id}/redefinir-senha`, { token, body });
+  const setPin = (body) => app.call('POST', `${BASE}/${bar.id}/redefinir-pin`, { token, body });
+
+  // Valor inválido é recusado: nunca vira um sorteado sem o dono saber
+  for (const senha of ['curta', '', '        ', 'x'.repeat(65), 'Bar-Escolhe', null, 12345678]) {
+    assert.equal((await setPassword({ senha })).status, 400, JSON.stringify(senha));
+  }
+  for (const pin of ['111111', '123456', '12345', '', 'abcdef', null]) {
+    assert.equal((await setPin({ pin })).status, 400, JSON.stringify(pin));
+  }
+  await app.ok('GET', '/api/dados', { token: bar.token });
+  assert.equal((await login(bar.login, bar.senha)).status, 200);
+
+  assert.deepEqual((await setPassword({ senha: 'escolhida-pelo-dono' })).data, { senha: 'escolhida-pelo-dono' });
+  assert.equal((await app.call('GET', '/api/dados', { token: bar.token })).status, 401);
+  assert.equal((await login(bar.login, bar.senha)).status, 401);
+  const entered = await login(bar.login, 'escolhida-pelo-dono');
+  assert.equal(entered.status, 200);
+
+  // PIN novo libera quem estava bloqueado por erros no antigo
+  const unlock = (pin) => app.call('POST', '/api/gerencia', { token: entered.data.token, body: { pin } });
+  const wrong = bar.pin === '111222' ? '333444' : '111222';
+  for (let i = 0; i < 5; i++) await unlock(wrong);
+  assert.equal((await unlock(bar.pin)).status, 429);
+  assert.deepEqual((await setPin({ pin: '908172' })).data, { pin: '908172' });
+  assert.equal((await unlock('908172')).status, 200);
+
+  const [row] = await app.query('SELECT * FROM estabelecimentos WHERE id = $1', [bar.id]);
+  assert.ok(!JSON.stringify(row).includes('escolhida-pelo-dono') && !JSON.stringify(row).includes('908172'));
+});
+
 test('o gerente troca a própria senha e o PIN', async () => {
   const bar = await app.newEstablishment('bar-troca');
   for (const pin of ['111111', '123456', '654321', '12345', 'abcdef']) {

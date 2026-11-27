@@ -133,6 +133,14 @@ const Api = (() => {
       emit('expired', message);
     },
 
+    /** Busca o nome e o login atuais: o dono da plataforma pode ter editado. */
+    async refreshEstablishment() {
+      const token = session?.token;
+      const data = await request('GET', '/api/sessao');
+      // Ignora a resposta se a pessoa saiu ou trocou de acesso nesse meio tempo
+      if (token && session?.token === token) saveSession({ token, estabelecimento: data.estabelecimento });
+    },
+
     /* ---------- Gerência ---------- */
     isManager: () => !!managerToken,
     lockManager() { managerToken = null; },

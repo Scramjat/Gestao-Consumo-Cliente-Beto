@@ -19,10 +19,11 @@ Os aparelhos se atualizam sozinhos a cada 4 segundos. O sistema precisa de inter
 
 | Quem | Como entra | O que faz |
 |---|---|---|
-| Dono da plataforma | `/plataforma`, com a senha definida no servidor | Cria, suspende e reativa estabelecimentos; gera nova senha ou PIN |
+| Dono da plataforma | `/plataforma`, com a senha definida no servidor | Cria, edita (nome e login), suspende e reativa estabelecimentos; define ou gera senha e PIN |
 | Estabelecimento (todos os aparelhos) | Login e senha do estabelecimento | Abre contas, lança e cancela pedidos, encerra e reabre |
 | Gerente | PIN de 6 números, além do login | Equipe, produtos e preços, histórico de faturamento, troca de senha e PIN |
 
+- No painel, **Gerenciar** abre um estabelecimento. Trocar o **login** não desconecta quem já entrou; trocar a **senha** desconecta todos. A senha e o PIN podem ser digitados pelo dono (8 caracteres ou mais; PIN de 6 números sem sequência ou repetição) ou gerados. A senha do próprio dono é definida no servidor (`PLATAFORMA_SENHA`), não no painel.
 - Ao criar um estabelecimento, a senha e o PIN aparecem **uma única vez**. O banco guarda só o hash: ninguém consegue ver, apenas gerar outro.
 - A sessão do estabelecimento dura 30 dias. Trocar a senha desconecta todos os aparelhos. Suspender corta o acesso na hora.
 - A liberação do PIN dura 15 minutos.
