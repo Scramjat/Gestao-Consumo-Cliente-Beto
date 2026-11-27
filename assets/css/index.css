@@ -51,8 +51,6 @@ kbd {
 }
 
 .topbar__inner {
-  max-width: 1240px;
-  margin: 0 auto;
   padding: 12px 24px;
   display: flex;
   align-items: center;
@@ -224,8 +222,6 @@ kbd {
 
 /* ---------- Conteúdo ---------- */
 .container {
-  max-width: 1240px;
-  margin: 0 auto;
   padding: 24px 24px 96px;
 }
 
