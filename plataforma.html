@@ -10,58 +10,189 @@
   <link rel="stylesheet" href="/assets/css/plataforma.css">
 </head>
 <body>
-  <main>
-    <p id="message" class="message" role="alert" hidden></p>
 
-    <!-- ===== Entrada do dono ===== -->
-    <section id="loginView" class="card card--narrow">
+  <!-- ===== Entrada do dono ===== -->
+  <main id="loginView" class="login">
+    <form id="loginForm" class="login__card">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M4 8h13v9a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M7 2v2M11 2v2M15 2v2"/></svg>
+      </span>
       <h1>Painel da plataforma</h1>
-      <form id="loginForm">
-        <label>Usuário
-          <input name="usuario" autocomplete="username" autocapitalize="none" required>
-        </label>
-        <label>Senha
-          <input name="senha" type="password" autocomplete="current-password" required>
-        </label>
-        <button type="submit">Entrar</button>
-      </form>
-    </section>
+      <p class="muted">Acesso do dono do sistema</p>
+      <label class="field">Usuário
+        <input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label class="field">Senha
+        <input name="senha" type="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="loginError" role="alert"></p>
+      <button type="submit" class="btn btn--primary">Entrar</button>
+    </form>
+  </main>
 
-    <!-- ===== Estabelecimentos ===== -->
-    <div id="panelView" hidden>
-      <header>
-        <h1>Estabelecimentos</h1>
-        <button id="logout" type="button" class="secondary">Sair</button>
-      </header>
+  <!-- ===== Painel ===== -->
+  <div id="panelView" hidden>
+    <header class="topbar">
+      <div class="wrap topbar__inner">
+        <span class="logo logo--sm" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11h1a3 3 0 0 1 0 6h-1"/><path d="M4 8h13v9a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4Z"/><path d="M7 2v2M11 2v2M15 2v2"/></svg>
+        </span>
+        <div class="topbar__title">
+          <strong>Comanda</strong>
+          <span>Painel da plataforma</span>
+        </div>
+        <button id="logout" type="button" class="btn btn--ghost">Sair</button>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <div class="heading">
+        <div>
+          <h1>Estabelecimentos</h1>
+          <p class="muted">Bares e restaurantes que usam o sistema</p>
+        </div>
+        <button id="openCreate" type="button" class="btn btn--primary">+ Novo estabelecimento</button>
+      </div>
+
+      <p id="message" class="notice notice--danger" role="alert" hidden></p>
+
+      <!-- Os três primeiros também filtram a lista -->
+      <section class="stats" id="stats" aria-label="Resumo">
+        <button type="button" class="stat is-active" data-filter="all"><span>Todos</span><strong id="countAll">0</strong></button>
+        <button type="button" class="stat stat--ok" data-filter="active"><span>Ativos</span><strong id="countActive">0</strong></button>
+        <button type="button" class="stat stat--off" data-filter="suspended"><span>Suspensos</span><strong id="countSuspended">0</strong></button>
+      </section>
 
       <!-- Situação da cópia de segurança -->
-      <p id="copyStatus" class="copy-status" role="status" hidden></p>
+      <p id="copyStatus" class="notice" role="status" hidden></p>
 
-      <!-- Senha e PIN gerados: aparecem só uma vez -->
-      <section id="secretBox" class="card card--secret" hidden>
-        <h2 id="secretTitle"></h2>
-        <dl id="secretList"></dl>
-        <p>Anote agora e entregue ao cliente. Depois de fechar, não dá para ver de novo: só gerar outro.</p>
-        <button id="secretClose" type="button">Já anotei</button>
-      </section>
+      <input type="search" id="search" class="search" placeholder="Buscar por nome ou login" autocomplete="off" aria-label="Buscar estabelecimento">
 
-      <section class="card">
-        <h2>Novo estabelecimento</h2>
-        <form id="createForm" class="row">
-          <label>Nome
-            <input name="nome" minlength="2" maxlength="80" required placeholder="Ex.: Bar do Beto">
+      <div class="table" id="table" hidden>
+        <div class="table__head" aria-hidden="true">
+          <span>Estabelecimento</span><span>Situação</span><span>Último acesso</span><span></span>
+        </div>
+        <ul id="list"></ul>
+      </div>
+      <p id="empty" class="empty" hidden></p>
+    </main>
+  </div>
+
+  <!-- ===== Novo estabelecimento ===== -->
+  <dialog id="createDialog" class="dialog" aria-labelledby="createTitle">
+    <form id="createForm" class="dialog__card">
+      <header class="dialog__head">
+        <h2 id="createTitle">Novo estabelecimento</h2>
+        <button type="button" class="close" data-close aria-label="Fechar">×</button>
+      </header>
+      <div class="dialog__body">
+        <label class="field">Nome
+          <input name="nome" minlength="2" maxlength="80" required placeholder="Ex.: Bar do Beto" autocomplete="off">
+        </label>
+        <label class="field">Login <small>letras sem acento, números, ponto, hífen ou _</small>
+          <input name="login" minlength="3" maxlength="40" required autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="Ex.: bar-do-beto">
+        </label>
+        <p class="muted">A senha e o PIN são gerados na hora e mostrados uma única vez. Depois você pode trocar.</p>
+        <p class="form-error" id="createError" role="alert"></p>
+        <button type="submit" class="btn btn--primary">Criar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===== Editar um estabelecimento ===== -->
+  <dialog id="editDialog" class="dialog" aria-labelledby="editTitle">
+    <div class="dialog__card">
+      <header class="dialog__head">
+        <div>
+          <h2 id="editTitle"></h2>
+          <p class="muted" id="editSub"></p>
+        </div>
+        <button type="button" class="close" data-close aria-label="Fechar">×</button>
+      </header>
+      <div class="dialog__body">
+        <form id="dataForm" class="section" novalidate>
+          <h3>Dados de acesso</h3>
+          <label class="field">Nome
+            <input name="nome" maxlength="80" autocomplete="off">
           </label>
-          <label>Login
-            <input name="login" minlength="3" maxlength="40" required autocapitalize="none" autocomplete="off" placeholder="Ex.: bar-do-beto">
+          <label class="field">Login
+            <input name="login" maxlength="40" autocapitalize="none" spellcheck="false" autocomplete="off">
           </label>
-          <button type="submit">Criar</button>
+          <p class="muted">Quem já está conectado continua. O login novo vale na próxima entrada.</p>
+          <p class="form-error" role="alert"></p>
+          <button type="submit" class="btn btn--primary">Salvar dados</button>
         </form>
-      </section>
 
-      <p id="empty" class="muted" hidden>Nenhum estabelecimento cadastrado.</p>
-      <ul id="list"></ul>
+        <form id="passwordForm" class="section" novalidate>
+          <h3>Senha de entrada</h3>
+          <p class="muted">A senha atual não pode ser vista: só trocada. Trocar desconecta todos os aparelhos.</p>
+          <label class="field">Nova senha <small>8 caracteres ou mais</small>
+            <span class="reveal">
+              <input name="senha" type="password" maxlength="64" autocomplete="new-password" autocapitalize="none" spellcheck="false">
+              <button type="button" class="reveal__btn" data-reveal aria-label="Mostrar a nova senha">Mostrar</button>
+            </span>
+          </label>
+          <p class="form-error" role="alert"></p>
+          <div class="buttons">
+            <button type="submit" class="btn btn--primary">Salvar senha</button>
+            <button type="button" class="btn" data-generate>Gerar uma senha</button>
+          </div>
+        </form>
+
+        <form id="pinForm" class="section" novalidate>
+          <h3>PIN do gerente</h3>
+          <p class="muted">O PIN atual também não pode ser visto.</p>
+          <label class="field">Novo PIN <small>6 números, sem sequência ou repetição</small>
+            <span class="reveal">
+              <input name="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+              <button type="button" class="reveal__btn" data-reveal aria-label="Mostrar o novo PIN">Mostrar</button>
+            </span>
+          </label>
+          <p class="form-error" role="alert"></p>
+          <div class="buttons">
+            <button type="submit" class="btn btn--primary">Salvar PIN</button>
+            <button type="button" class="btn" data-generate>Gerar um PIN</button>
+          </div>
+        </form>
+
+        <section class="section">
+          <h3>Situação</h3>
+          <p class="muted" id="statusText"></p>
+          <p class="form-error" id="statusError" role="alert"></p>
+          <button type="button" class="btn" id="toggleActive"></button>
+        </section>
+      </div>
     </div>
-  </main>
+  </dialog>
+
+  <!-- ===== Senha e PIN: aparecem uma única vez ===== -->
+  <dialog id="secretDialog" class="dialog dialog--sm" aria-labelledby="secretTitle">
+    <div class="dialog__card">
+      <div class="dialog__body">
+        <h2 id="secretTitle"></h2>
+        <dl id="secretList" class="secret"></dl>
+        <p class="muted">Anote agora e entregue ao cliente. Depois de fechar, não dá para ver de novo: só definir outro.</p>
+        <button id="secretClose" type="button" class="btn btn--primary">Já anotei</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== Confirmação ===== -->
+  <dialog id="confirmDialog" class="dialog dialog--sm" aria-labelledby="confirmTitle">
+    <div class="dialog__card">
+      <div class="dialog__body">
+        <h2 id="confirmTitle"></h2>
+        <p id="confirmText"></p>
+        <div class="buttons buttons--end">
+          <button type="button" class="btn" id="confirmCancel">Cancelar</button>
+          <button type="button" class="btn btn--primary" id="confirmOk"></button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <p id="toast" class="toast" role="status" hidden></p>
+
   <script src="/assets/js/plataforma.js"></script>
 </body>
 </html>

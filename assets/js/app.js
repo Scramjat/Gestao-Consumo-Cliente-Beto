@@ -612,6 +612,8 @@
     UI.reset();
     render();
     Store.start();
+    // Sem conexão agora, fica o nome guardado; a próxima abertura atualiza
+    Api.refreshEstablishment().then(render).catch(() => {});
     requestAnimationFrame(() => UI.moveThumb(els.filterGroup));
   }
 

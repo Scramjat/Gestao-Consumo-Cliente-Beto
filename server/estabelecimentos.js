@@ -36,15 +36,18 @@ function validLogin(value) {
   return login;
 }
 
+/** Só texto: um número ou outro tipo não é convertido em senha sem ninguém perceber. */
+const typed = (value) => (typeof value === 'string' ? value.trim() : '');
+
 function validPassword(value) {
-  const password = String(value || '').trim();
+  const password = typed(value);
   if (password.length < MIN_PASSWORD) V.fail(400, `A senha precisa ter pelo menos ${MIN_PASSWORD} caracteres.`);
   if (password.length > MAX_PASSWORD) V.fail(400, `A senha pode ter no máximo ${MAX_PASSWORD} caracteres.`);
   return password;
 }
 
 function validPin(value) {
-  const pin = String(value || '').trim();
+  const pin = typed(value);
   if (!/^\d{6}$/.test(pin)) V.fail(400, 'O PIN precisa ter 6 números.');
   if (Auth.isWeakPin(pin)) V.fail(400, 'Escolha um PIN que não seja repetido nem em sequência.');
   return pin;
@@ -155,27 +158,40 @@ function createEstablishments({ db, secret, log = () => {} }) {
     return { estabelecimento: publicInfo(await required(id)), senha, pin };
   }
 
-  async function update(id, { nome, ativo }) {
+  /** Nome, login e situação. Trocar o login não desconecta quem já entrou. */
+  async function update(id, { nome, ativo, login: usuario }) {
     const found = await required(id);
     const name = nome === undefined ? found.nome : V.text(nome, { field: 'Nome', min: 2, max: 80 });
+    // Um login antigo fora das regras não impede editar o resto
+    const newLogin = usuario === undefined || normalizeLogin(usuario) === found.login ? found.login : validLogin(usuario);
     if (ativo !== undefined && typeof ativo !== 'boolean') V.fail(400, 'Situação inválida.');
     const active = ativo === undefined ? found.ativo : ativo;
-    await db.query('UPDATE estabelecimentos SET nome = $2, ativo = $3 WHERE id = $1', [id, name, active]);
-    if (active !== found.ativo) log(`Estabelecimento ${found.login}: ${active ? 'reativado' : 'suspenso'}`);
+    try {
+      await db.query(
+        'UPDATE estabelecimentos SET nome = $2, ativo = $3, login = $4 WHERE id = $1', [id, name, active, newLogin]
+      );
+    } catch (e) {
+      if (e.code === '23505') V.fail(409, 'Já existe um estabelecimento com esse login.');
+      throw e;
+    }
+    if (newLogin !== found.login) log(`Login trocado pelo dono da plataforma: ${found.login} -> ${newLogin}`);
+    if (active !== found.ativo) log(`Estabelecimento ${newLogin}: ${active ? 'reativado' : 'suspenso'}`);
     return publicInfo(await required(id));
   }
 
-  async function resetPassword(id) {
+  /** Define a senha escolhida pelo dono ou, sem nenhuma, sorteia. Desconecta os aparelhos. */
+  async function resetPassword(id, { senha: chosen } = {}) {
     const found = await required(id);
-    const senha = Auth.randomPassword();
+    const senha = chosen === undefined ? Auth.randomPassword() : validPassword(chosen);
+    if (senha.toLowerCase() === found.login) V.fail(400, 'A senha não pode ser igual ao login.');
     await setPassword(id, senha);
     log(`Senha redefinida pelo dono da plataforma: ${found.login}`);
     return { senha };
   }
 
-  async function resetPin(id) {
+  async function resetPin(id, { pin: chosen } = {}) {
     const found = await required(id);
-    const pin = Auth.randomPin();
+    const pin = chosen === undefined ? Auth.randomPin() : validPin(chosen);
     await setPin(id, pin);
     log(`PIN redefinido pelo dono da plataforma: ${found.login}`);
     return { pin };
